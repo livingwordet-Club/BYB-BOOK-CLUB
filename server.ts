@@ -8,7 +8,7 @@ import multer from "multer";
 import fs from "fs";
 import axios from "axios";
 
-const JWT_SECRET = process.env.JWT_SECRET || "byb-mkc-secret-key-2026";
+const JWT_SECRET = 72f2f2add23560722469e10034482923;
 const db = new Database("library.db");
 console.log("Database initialized at library.db");
 
