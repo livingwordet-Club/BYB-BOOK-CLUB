@@ -41,6 +41,7 @@ export default function BibleReader() {
   const [theme, setTheme] = useState('dark');
   const [selectedVerse, setSelectedVerse] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<any[]>([]);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export default function BibleReader() {
   }, [selectedBible, selectedChapter]);
 
   const fetchBibles = async () => {
+    setGlobalError(null);
     try {
       const res = await fetch('/api/bible/versions', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -68,17 +70,18 @@ export default function BibleReader() {
       const data = await res.json();
       if (data.error) {
         console.error("Bible API Error:", data.error);
+        setGlobalError(`Bible API Error: ${data.error}`);
         return;
       }
       if (Array.isArray(data)) {
         setBibles(data);
-        // If current selection is not in the list, pick the first one
         if (data.length > 0 && !data.find(b => b.id === selectedBible)) {
           setSelectedBible(data[0].id);
         }
       }
     } catch (err) {
       console.error("Failed to fetch bibles", err);
+      setGlobalError("Failed to connect to Bible service.");
     }
   };
 
@@ -255,7 +258,18 @@ export default function BibleReader() {
       {/* Main Reader Area */}
       <main className="flex-1 flex flex-col items-center relative">
         <div className="max-w-3xl w-full px-6 py-12 md:py-20">
-          {loading ? (
+          {globalError ? (
+            <div className="flex flex-col items-center justify-center py-40 gap-6 text-center">
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                <X className="w-8 h-8 text-red-500" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold">Something went wrong</h3>
+                <p className="text-sm opacity-60 max-w-xs mx-auto">{globalError}</p>
+              </div>
+              <Button onClick={fetchBibles} variant="outline">Try Again</Button>
+            </div>
+          ) : loading ? (
             <div className="flex flex-col items-center justify-center py-40 gap-4">
               <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm font-bold uppercase tracking-widest opacity-40">Opening the Word...</p>
