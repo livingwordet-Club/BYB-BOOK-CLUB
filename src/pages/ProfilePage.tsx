@@ -3,8 +3,49 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button } from '../components/UI';
-import { User, Mail, Book, Heart, Bookmark, Highlighter, StickyNote, Quote, MessageCircle, X, ChevronRight, Settings, Trash2, Check, ArrowLeft } from 'lucide-react';
+import { User, Mail, Book, Heart, Bookmark, Highlighter, StickyNote, Quote, MessageCircle, X, ChevronRight, Settings, Trash2, Check, ArrowLeft, Camera, Upload, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
+import Cropper from 'react-easy-crop';
+
+// Helper to create an image from a URL
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.setAttribute('crossOrigin', 'anonymous');
+    image.src = url;
+  });
+
+// Helper to get the cropped image as a blob
+async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob | null> {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return null;
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob);
+    }, 'image/jpeg');
+  });
+}
 
 export default function ProfilePage() {
   const location = useLocation();
@@ -19,16 +60,37 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onCropComplete = (_: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      const reader = new FileReader();
+      reader.addEventListener('load', () => {
+        setImageToCrop(reader.result as string);
+      });
+      reader.readAsDataURL(file);
+    }
+  };
 
-    const formData = new FormData();
-    formData.append('image', file);
+  const handleUploadCroppedImage = async () => {
+    if (!imageToCrop || !croppedAreaPixels) return;
 
     setUploading(true);
     try {
+      const croppedImageBlob = await getCroppedImg(imageToCrop, croppedAreaPixels);
+      if (!croppedImageBlob) throw new Error('Failed to crop image');
+
+      const formData = new FormData();
+      formData.append('image', croppedImageBlob, 'profile-pic.jpg');
+
       const res = await fetch('/api/user/profile-pic', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -38,6 +100,7 @@ export default function ProfilePage() {
       if (res.ok) {
         const data = await res.json();
         setProfile({ ...profile, profile_pic: data.url });
+        setImageToCrop(null);
       } else {
         alert('Failed to upload image');
       }
@@ -48,7 +111,11 @@ export default function ProfilePage() {
       setUploading(false);
     }
   };
-  
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // This is replaced by handleFileChange and handleUploadCroppedImage
+  };
+
   useEffect(() => {
     if (location.state?.selectedFriend) {
       setSelectedFriend(location.state.selectedFriend);
@@ -169,11 +236,27 @@ export default function ProfilePage() {
       <Card className="bg-primary-900 text-white border-none overflow-hidden relative dark:bg-primary-950">
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-800 rounded-full -translate-y-1/2 translate-x-1/2 opacity-20 dark:bg-primary-900" />
         <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
-          <img 
-            src={profile.profile_pic || 'https://picsum.photos/seed/user/200'} 
-            className="w-32 h-32 md:w-48 md:h-48 rounded-3xl object-cover border-4 border-primary-800 shadow-2xl dark:border-primary-900"
-            referrerPolicy="no-referrer"
-          />
+          <div className="relative group">
+            <div className="relative w-32 h-32 md:w-48 md:h-48 rounded-3xl overflow-hidden border-4 border-primary-800 shadow-2xl dark:border-primary-900">
+              <img 
+                src={profile.profile_pic || 'https://picsum.photos/seed/user/200'} 
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 cursor-pointer transition-all duration-300 backdrop-blur-sm">
+                <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} disabled={uploading} />
+                <Camera className="w-8 h-8 text-white mb-2" />
+                <span className="text-white text-[10px] font-bold uppercase tracking-widest">
+                  {uploading ? 'Processing...' : 'Upload Photo'}
+                </span>
+              </label>
+            </div>
+            {uploading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-3xl z-20">
+                <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+          </div>
           <div className="text-center md:text-left flex-1">
             <h1 className="text-4xl font-bold mb-2">{profile.name || profile.username}</h1>
             <p className="text-primary-300 font-serif italic mb-4 dark:text-primary-400">"{profile.profile_verse || 'Seek first the kingdom of God...'}"</p>
@@ -271,6 +354,80 @@ export default function ProfilePage() {
           </Card>
         </div>
       </div>
+
+      {/* Crop Modal */}
+      <AnimatePresence>
+        {imageToCrop && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-stone-900 w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/10"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">Crop Profile Picture</h3>
+                <Button variant="ghost" size="sm" onClick={() => setImageToCrop(null)}>
+                  <X className="w-6 h-6" />
+                </Button>
+              </div>
+
+              <div className="relative h-[400px] bg-black">
+                <Cropper
+                  image={imageToCrop}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                  cropShape="round"
+                  showGrid={false}
+                />
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div className="flex items-center gap-4">
+                  <ZoomOut className="w-5 h-5 text-stone-500" />
+                  <input
+                    type="range"
+                    value={zoom}
+                    min={1}
+                    max={3}
+                    step={0.1}
+                    aria-labelledby="Zoom"
+                    onChange={(e) => setZoom(Number(e.target.value))}
+                    className="flex-1 h-1.5 bg-stone-800 rounded-lg appearance-none cursor-pointer accent-primary-500"
+                  />
+                  <ZoomIn className="w-5 h-5 text-stone-500" />
+                </div>
+
+                <div className="flex gap-4">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 h-14 rounded-2xl border-white/10 text-white hover:bg-white/5"
+                    onClick={() => setImageToCrop(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    className="flex-1 h-14 rounded-2xl bg-primary-500 hover:bg-primary-600 text-white font-bold"
+                    onClick={handleUploadCroppedImage}
+                    disabled={uploading}
+                  >
+                    {uploading ? 'Saving...' : 'Set Profile Picture'}
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Friend Info Popup */}
       <AnimatePresence>
