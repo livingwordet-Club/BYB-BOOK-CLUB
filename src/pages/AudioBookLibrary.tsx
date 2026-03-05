@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, Button, Input } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
-import { Headphones, Play, Pause, Search, Clock, User, BookOpen, Volume2, ArrowLeft } from 'lucide-react';
+import { Headphones, Play, Pause, Search, Clock, User, BookOpen, Volume2, ArrowLeft, SkipBack, SkipForward, X as CloseIcon } from 'lucide-react';
 
 const FEATURED_BOOKS = [
   {
@@ -51,6 +51,12 @@ export default function AudioBookLibrary() {
       setProgress(0);
     }
   }, [selectedBook]);
+
+  useEffect(() => {
+    if (isPlaying && audioRef.current) {
+      audioRef.current.play().catch(console.error);
+    }
+  }, [currentSectionIndex, sections]);
 
   const fetchSections = async (bookId: string) => {
     setLoadingSections(true);
@@ -269,10 +275,7 @@ export default function AudioBookLibrary() {
                                 key={idx}
                                 onClick={() => {
                                   setCurrentSectionIndex(idx);
-                                  if (audioRef.current) {
-                                    audioRef.current.src = section.listen_url;
-                                    audioRef.current.play().catch(console.error);
-                                  }
+                                  setIsPlaying(true);
                                 }}
                                 className={`w-full text-left text-xs p-2 rounded-lg transition-colors ${
                                   currentSectionIndex === idx 
@@ -321,20 +324,51 @@ export default function AudioBookLibrary() {
                         <span>{formatTime(duration)}</span>
                       </div>
                       
-                      <div className="flex items-center justify-center gap-8">
+                      <div className="flex items-center justify-center gap-6">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-stone-400 hover:text-primary-600"
+                          onClick={() => {
+                            if (currentSectionIndex > 0) {
+                              setCurrentSectionIndex(prev => prev - 1);
+                            }
+                          }}
+                          disabled={currentSectionIndex === 0}
+                        >
+                          <SkipBack className="w-6 h-6" />
+                        </Button>
+
+                        <div 
+                          onClick={togglePlay}
+                          className="w-16 h-16 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-200 cursor-pointer hover:scale-110 transition-transform dark:shadow-primary-950"
+                        >
+                          {isPlaying ? (
+                            <Pause className="w-8 h-8 text-white fill-current" />
+                          ) : (
+                            <Play className="w-8 h-8 text-white fill-current ml-1" />
+                          )}
+                        </div>
+
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-stone-400 hover:text-primary-600"
+                          onClick={() => {
+                            if (currentSectionIndex < sections.length - 1) {
+                              setCurrentSectionIndex(prev => prev + 1);
+                            }
+                          }}
+                          disabled={currentSectionIndex === sections.length - 1}
+                        >
+                          <SkipForward className="w-6 h-6" />
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-stone-100 dark:border-primary-800">
                         <Button variant="ghost" size="sm" className="text-stone-400 hover:text-primary-600">
                           <Volume2 className="w-5 h-5" />
                         </Button>
-                        <div 
-                          onClick={togglePlay}
-                          className="w-14 h-14 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-200 cursor-pointer hover:scale-110 transition-transform dark:shadow-primary-950"
-                        >
-                          {isPlaying ? (
-                            <Pause className="w-6 h-6 text-white fill-current" />
-                          ) : (
-                            <Play className="w-6 h-6 text-white fill-current ml-1" />
-                          )}
-                        </div>
                         <Button variant="ghost" size="sm" className="text-stone-400 hover:text-primary-600" onClick={() => window.open(selectedBook.url_librivox, '_blank')}>
                           <ExternalLink className="w-5 h-5" />
                         </Button>
@@ -352,7 +386,7 @@ export default function AudioBookLibrary() {
                   onClick={() => setSelectedBook(null)}
                   className="absolute top-6 right-6 w-10 h-10 bg-white/20 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-white/40 transition-colors"
                 >
-                  <X className="w-6 h-6" />
+                  <CloseIcon className="w-6 h-6" />
                 </button>
               </motion.div>
             </div>
