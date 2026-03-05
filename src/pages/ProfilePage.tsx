@@ -18,7 +18,37 @@ export default function ProfilePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    setUploading(true);
+    try {
+      const res = await fetch('/api/user/profile-pic', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setProfile({ ...profile, profile_pic: data.url });
+      } else {
+        alert('Failed to upload image');
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Error uploading image');
+    } finally {
+      setUploading(false);
+    }
+  };
+  
   useEffect(() => {
     if (location.state?.selectedFriend) {
       setSelectedFriend(location.state.selectedFriend);
