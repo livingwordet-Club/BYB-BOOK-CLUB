@@ -301,12 +301,37 @@ app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
 // Audiobooks (External API)
 app.get("/api/audiobooks", authenticateToken, async (req, res) => {
   try {
+    console.log("Fetching audiobooks from LibriVox...");
+    // Searching for Christian classics on LibriVox
+    // Using a more reliable query format
     const response = await axios.get("https://librivox.org/api/feed/audiobooks", {
-      params: { format: "json", limit: 50, genre: "Christianity" },
-      timeout: 10000
+      params: {
+        format: "json",
+        limit: 50,
+        genre: "Christianity"
+      },
+      timeout: 10000 // 10 second timeout
     });
-    res.json(response.data.books || []);
-  } catch (error) { res.json([]); }
+    
+    const books = response.data.books || [];
+    console.log(`Successfully fetched ${books.length} audiobooks from LibriVox`);
+    res.json(books);
+  } catch (error: any) {
+    console.error("LibriVox API Error:", error.message);
+    // If it's a timeout or network error, return empty array so frontend doesn't crash
+    res.status(200).json([]); 
+  }
+});
+
+app.get("/api/audiobooks/:id/sections", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const response = await axios.get(`https://librivox.org/api/feed/sections?audiobook_id=${id}&format=json`);
+    res.json(response.data.sections || []);
+  } catch (error: any) {
+    console.error("LibriVox Sections Error:", error.message);
+    res.status(500).json({ error: "Failed to fetch chapters" });
+  }
 });
 
 // Account Management
