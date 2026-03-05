@@ -4,7 +4,7 @@ import { Card, Button, Input } from '../components/UI';
 import { 
   Book, ChevronLeft, ChevronRight, Settings, Highlighter, 
   Bookmark, StickyNote, Heart, Search, Type, Palette, 
-  ZoomIn, ZoomOut, X, Menu, Share2, Headphones
+  ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +42,13 @@ export default function BibleReader() {
   const [selectedVerse, setSelectedVerse] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<any[]>([]);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<string | null>(null);
+  
+  // New Search States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +68,16 @@ export default function BibleReader() {
     if (selectedBible && selectedChapter) fetchContent();
   }, [selectedBible, selectedChapter]);
 
+  // Scroll to verse after search selection
+  useEffect(() => {
+    if (selectedVerse && contentRef.current && !loading) {
+      setTimeout(() => {
+        const el = contentRef.current?.querySelector(`[data-verse-id="${selectedVerse}"]`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [selectedVerse, loading, content]);
+
   const fetchBibles = async () => {
     setGlobalError(null);
     try {
@@ -69,7 +86,6 @@ export default function BibleReader() {
       });
       const data = await res.json();
       if (data.error) {
-        console.error("Bible API Error:", data.error);
         setGlobalError(`Bible API Error: ${data.error}`);
         return;
       }
@@ -80,7 +96,6 @@ export default function BibleReader() {
         }
       }
     } catch (err) {
-      console.error("Failed to fetch bibles", err);
       setGlobalError("Failed to connect to Bible service.");
     }
   };
@@ -91,19 +106,13 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.error) {
-        console.error("Books API Error:", data.error);
-        return;
-      }
       if (Array.isArray(data)) {
         setBooks(data);
         if (data.length > 0 && !data.find(b => b.id === selectedBook)) {
           setSelectedBook(data[0].id);
         }
       }
-    } catch (err) {
-      console.error("Failed to fetch books", err);
-    }
+    } catch (err) { console.error("Failed to fetch books", err); }
   };
 
   const fetchChapters = async () => {
@@ -112,19 +121,13 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.error) {
-        console.error("Chapters API Error:", data.error);
-        return;
-      }
       if (Array.isArray(data)) {
         setChapters(data);
         if (data.length > 0 && !data.find(c => c.id === selectedChapter)) {
           setSelectedChapter(data[0].id);
         }
       }
-    } catch (err) {
-      console.error("Failed to fetch chapters", err);
-    }
+    } catch (err) { console.error("Failed to fetch chapters", err); }
   };
 
   const fetchContent = async () => {
@@ -134,21 +137,31 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.error) {
-        console.error("Content API Error:", data.error);
-        setContent(`<div class="text-center py-20 opacity-60 italic">Failed to load content: ${data.error}</div>`);
-        return;
-      }
       if (data && data.content) {
         setContent(data.content);
       } else {
-        setContent('<div class="text-center py-20 opacity-60 italic">No content available for this chapter.</div>');
+        setContent('<div class="text-center py-20 opacity-60 italic">No content available.</div>');
       }
     } catch (err) {
-      console.error("Failed to fetch content", err);
-      setContent('<div class="text-center py-20 opacity-60 italic">An error occurred while fetching content.</div>');
+      setContent('<div class="text-center py-20 opacity-60 italic">An error occurred.</div>');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/bible/${selectedBible}/search?query=${encodeURIComponent(searchQuery)}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setSearchResults(data.verses || []);
+    } catch (err) {
+      console.error("Search error", err);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -159,9 +172,7 @@ export default function BibleReader() {
       });
       const data = await res.json();
       setHighlights(Array.isArray(data) ? data.filter((a: any) => a.type === 'highlight') : []);
-    } catch (err) {
-      console.error("Failed to fetch highlights", err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const handleVerseClick = (e: React.MouseEvent) => {
@@ -175,11 +186,8 @@ export default function BibleReader() {
     }
   };
 
-  const [notification, setNotification] = useState<string | null>(null);
-
   const handleAction = async (type: string, metadata: any = {}) => {
     if (!selectedVerse) return;
-    
     try {
       await fetch('/api/activity', {
         method: 'POST',
@@ -202,12 +210,8 @@ export default function BibleReader() {
       fetchHighlights();
       setNotification(`${type.charAt(0).toUpperCase() + type.slice(1)} saved!`);
       setTimeout(() => setNotification(null), 3000);
-      if (type !== 'highlight') {
-        setSelectedVerse(null);
-      }
-    } catch (err) {
-      console.error(`Failed to save ${type}`, err);
-    }
+      if (type !== 'highlight') setSelectedVerse(null);
+    } catch (err) { console.error(`Failed to save ${type}`, err); }
   };
 
   const currentTheme = THEMES.find(t => t.id === theme) || THEMES[0];
@@ -215,13 +219,10 @@ export default function BibleReader() {
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-500 ${currentTheme.bg} ${currentTheme.text}`}>
-      {/* Notifications */}
       <AnimatePresence>
         {notification && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
             className="fixed top-20 left-1/2 -translate-x-1/2 bg-primary-500 text-white px-6 py-2 rounded-full shadow-lg z-50 text-sm font-bold"
           >
             {notification}
@@ -229,7 +230,6 @@ export default function BibleReader() {
         )}
       </AnimatePresence>
 
-      {/* Top Navigation Bar */}
       <header className="sticky top-0 z-40 backdrop-blur-md bg-opacity-80 border-b border-black/5 dark:border-white/5 flex items-center justify-between px-4 h-16">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => setShowNav(true)}>
@@ -255,18 +255,12 @@ export default function BibleReader() {
         </div>
       </header>
 
-      {/* Main Reader Area */}
       <main className="flex-1 flex flex-col items-center relative">
         <div className="max-w-3xl w-full px-6 py-12 md:py-20">
           {globalError ? (
             <div className="flex flex-col items-center justify-center py-40 gap-6 text-center">
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
-                <X className="w-8 h-8 text-red-500" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-xl font-bold">Something went wrong</h3>
-                <p className="text-sm opacity-60 max-w-xs mx-auto">{globalError}</p>
-              </div>
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center"><X className="w-8 h-8 text-red-500" /></div>
+              <div className="space-y-2"><h3 className="text-xl font-bold">Something went wrong</h3><p className="text-sm opacity-60">{globalError}</p></div>
               <Button onClick={fetchBibles} variant="outline">Try Again</Button>
             </div>
           ) : loading ? (
@@ -276,30 +270,23 @@ export default function BibleReader() {
             </div>
           ) : (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               className={`bible-content ${currentFontSize.size} leading-relaxed font-serif`}
-              ref={contentRef}
-              onClick={handleVerseClick}
+              ref={contentRef} onClick={handleVerseClick}
               dangerouslySetInnerHTML={{ __html: content }}
             />
           )}
         </div>
 
-        {/* Verse Selection Tools */}
         <AnimatePresence>
           {selectedVerse && (
             <motion.div
-              initial={{ y: 100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 100, opacity: 0 }}
+              initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 100, opacity: 0 }}
               className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-lg bg-white dark:bg-stone-900 rounded-[2rem] shadow-2xl border border-black/5 dark:border-white/10 p-6 z-50"
             >
               <div className="flex items-center justify-between mb-6">
                 <span className="text-xs font-bold uppercase tracking-widest opacity-40">Verse {selectedVerse.split('.').pop()}</span>
-                <Button variant="ghost" size="sm" onClick={() => setSelectedVerse(null)}>
-                  <X className="w-4 h-4" />
-                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setSelectedVerse(null)}><X className="w-4 h-4" /></Button>
               </div>
               
               <div className="grid grid-cols-4 gap-4">
@@ -318,21 +305,13 @@ export default function BibleReader() {
         </AnimatePresence>
       </main>
 
-      {/* Navigation Drawer */}
+      {/* Navigation & Search Drawer */}
       <AnimatePresence>
         {showNav && (
           <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowNav(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNav(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" />
             <motion.div
-              initial={{ x: '-100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '-100%' }}
+              initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
               className="fixed inset-y-0 left-0 w-full max-w-sm bg-white dark:bg-stone-900 z-50 shadow-2xl flex flex-col"
             >
               <div className="p-6 border-b dark:border-white/5 flex items-center justify-between">
@@ -340,185 +319,114 @@ export default function BibleReader() {
                 <Button variant="ghost" size="sm" onClick={() => setShowNav(false)}><X /></Button>
               </div>
 
+              {/* SEARCH INTERFACE */}
+              <div className="p-4 border-b dark:border-white/5">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
+                  <input 
+                    type="text" placeholder="Search Scripture..." value={searchQuery}
+                    className="w-full bg-black/5 dark:bg-white/5 rounded-xl py-3 pl-10 pr-4 text-sm outline-none focus:ring-2 ring-primary-500"
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  />
+                  {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary-500" />}
+                </div>
+              </div>
+
               <div className="flex-1 overflow-hidden flex">
-                {/* Versions Column */}
-                <div className="w-1/3 border-r dark:border-white/5 overflow-y-auto p-2 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Versions</p>
-                  {bibles.slice(0, 20).map(b => (
-                    <button
-                      key={b.id}
-                      onClick={() => setSelectedBible(b.id)}
-                      className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedBible === b.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-                    >
-                      {b.abbreviation}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Books Column */}
-                <div className="w-1/3 border-r dark:border-white/5 overflow-y-auto p-2 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Books</p>
-                  {books.map(b => (
-                    <button
-                      key={b.id}
-                      onClick={() => setSelectedBook(b.id)}
-                      className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedBook === b.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-                    >
-                      {b.name}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Chapters Column */}
-                <div className="w-1/3 overflow-y-auto p-2 space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Chapters</p>
-                  {chapters.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => {
-                        setSelectedChapter(c.id);
-                        setShowNav(false);
-                      }}
-                      className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedChapter === c.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-                    >
-                      {c.number}
-                    </button>
-                  ))}
-                </div>
+                {searchResults.length > 0 ? (
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    <div className="flex justify-between items-center"><p className="text-[10px] font-bold uppercase opacity-40">Results</p>
+                    <button onClick={() => setSearchResults([])} className="text-[10px] text-primary-500 font-bold">Clear</button></div>
+                    {searchResults.map((r: any) => (
+                      <button key={r.id} className="w-full text-left p-3 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-primary-500/10 transition-colors"
+                        onClick={() => { setSelectedBook(r.bookId); setSelectedChapter(r.chapterId); setSelectedVerse(r.id); setShowNav(false); }}>
+                        <p className="text-[10px] font-bold text-primary-500 mb-1">{r.reference}</p>
+                        <p className="text-xs opacity-80 italic line-clamp-2">"{r.text.replace(/<[^>]*>/g, '')}"</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-1/3 border-r dark:border-white/5 overflow-y-auto p-2 space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Versions</p>
+                      {bibles.slice(0, 30).map(b => (
+                        <button key={b.id} onClick={() => setSelectedBible(b.id)} className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedBible === b.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}>{b.abbreviation}</button>
+                      ))}
+                    </div>
+                    <div className="w-1/3 border-r dark:border-white/5 overflow-y-auto p-2 space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Books</p>
+                      {books.map(b => (
+                        <button key={b.id} onClick={() => setSelectedBook(b.id)} className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedBook === b.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}>{b.name}</button>
+                      ))}
+                    </div>
+                    <div className="w-1/3 overflow-y-auto p-2 space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 p-2">Chapters</p>
+                      {chapters.map(c => (
+                        <button key={c.id} onClick={() => { setSelectedChapter(c.id); setShowNav(false); }} className={`w-full text-left p-2 rounded-lg text-xs transition-colors ${selectedChapter === c.id ? 'bg-primary-500 text-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}>{c.number}</button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Settings Drawer */}
       <AnimatePresence>
         {showSettings && (
           <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSettings(false)}
-              className="fixed inset-0 bg-black/40 z-50"
-            />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/40 z-50" />
             <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-900 z-50 rounded-t-[2.5rem] shadow-2xl p-8 space-y-8"
             >
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold">Reader Settings</h2>
-                <Button variant="ghost" size="sm" onClick={() => setShowSettings(false)}><X /></Button>
-              </div>
-
+              <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Reader Settings</h2><Button variant="ghost" size="sm" onClick={() => setShowSettings(false)}><X /></Button></div>
               <div className="space-y-4">
-                <p className="text-xs font-bold uppercase tracking-widest opacity-40 flex items-center gap-2">
-                  <Palette className="w-4 h-4" /> Theme
-                </p>
+                <p className="text-xs font-bold uppercase tracking-widest opacity-40 flex items-center gap-2"><Palette className="w-4 h-4" /> Theme</p>
                 <div className="grid grid-cols-4 gap-4">
                   {THEMES.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTheme(t.id)}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${theme === t.id ? 'border-primary-500 bg-primary-500/10' : 'border-transparent bg-black/5 dark:bg-white/5'}`}
-                    >
-                      <div className={`w-8 h-8 rounded-full ${t.bg} border border-black/10`} />
-                      <span className="text-[10px] font-bold">{t.name}</span>
+                    <button key={t.id} onClick={() => setTheme(t.id)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${theme === t.id ? 'border-primary-500 bg-primary-500/10' : 'border-transparent bg-black/5 dark:bg-white/5'}`}>
+                      <div className={`w-8 h-8 rounded-full ${t.bg} border border-black/10`} /><span className="text-[10px] font-bold">{t.name}</span>
                     </button>
                   ))}
                 </div>
               </div>
-
               <div className="space-y-4">
-                <p className="text-xs font-bold uppercase tracking-widest opacity-40 flex items-center gap-2">
-                  <Type className="w-4 h-4" /> Text Size
-                </p>
+                <p className="text-xs font-bold uppercase tracking-widest opacity-40 flex items-center gap-2"><Type className="w-4 h-4" /> Text Size</p>
                 <div className="flex items-center justify-between bg-black/5 dark:bg-white/5 p-2 rounded-2xl">
-                  <Button variant="ghost" onClick={() => {
-                    const idx = FONT_SIZES.findIndex(f => f.id === fontSize);
-                    if (idx > 0) setFontSize(FONT_SIZES[idx-1].id);
-                  }}>
-                    <ZoomOut className="w-5 h-5" />
-                  </Button>
+                  <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx > 0) setFontSize(FONT_SIZES[idx-1].id); }}><ZoomOut className="w-5 h-5" /></Button>
                   <span className="text-sm font-bold">{currentFontSize.label}</span>
-                  <Button variant="ghost" onClick={() => {
-                    const idx = FONT_SIZES.findIndex(f => f.id === fontSize);
-                    if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id);
-                  }}>
-                    <ZoomIn className="w-5 h-5" />
-                  </Button>
+                  <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id); }}><ZoomIn className="w-5 h-5" /></Button>
                 </div>
               </div>
-
-              <div className="pt-4">
-                <Button className="w-full h-14 text-lg rounded-2xl" onClick={() => setShowSettings(false)}>
-                  Done
-                </Button>
-              </div>
+              <div className="pt-4"><Button className="w-full h-14 text-lg rounded-2xl" onClick={() => setShowSettings(false)}>Done</Button></div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Bottom Navigation */}
       <footer className="sticky bottom-0 z-40 backdrop-blur-md bg-opacity-80 border-t border-black/5 dark:border-white/5 flex items-center justify-around h-16 px-4">
-        <Button 
-          variant="ghost" 
-          className="flex flex-col items-center gap-1 opacity-60 hover:opacity-100"
-          onClick={() => {
-            const currentIdx = chapters.findIndex(c => c.id === selectedChapter);
-            if (currentIdx > 0) setSelectedChapter(chapters[currentIdx-1].id);
-          }}
-        >
-          <ChevronLeft className="w-5 h-5" />
-          <span className="text-[10px] font-bold uppercase">Prev</span>
+        <Button variant="ghost" className="flex flex-col items-center gap-1 opacity-60 hover:opacity-100"
+          onClick={() => { const currentIdx = chapters.findIndex(c => c.id === selectedChapter); if (currentIdx > 0) setSelectedChapter(chapters[currentIdx-1].id); }}>
+          <ChevronLeft className="w-5 h-5" /><span className="text-[10px] font-bold uppercase">Prev</span>
         </Button>
-        
         <div className="h-1 w-20 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
-          <motion.div 
-            className="h-full bg-primary-500"
-            initial={{ width: 0 }}
-            animate={{ width: `${(chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100}%` }}
-          />
+          <motion.div className="h-full bg-primary-500" initial={{ width: 0 }} animate={{ width: `${(chapters.findIndex(c => c.id === selectedChapter) + 1) / (chapters.length || 1) * 100}%` }} />
         </div>
-
-        <Button 
-          variant="ghost" 
-          className="flex flex-col items-center gap-1 opacity-60 hover:opacity-100"
-          onClick={() => {
-            const currentIdx = chapters.findIndex(c => c.id === selectedChapter);
-            if (currentIdx < chapters.length - 1) setSelectedChapter(chapters[currentIdx+1].id);
-          }}
-        >
-          <ChevronRight className="w-5 h-5" />
-          <span className="text-[10px] font-bold uppercase">Next</span>
+        <Button variant="ghost" className="flex flex-col items-center gap-1 opacity-60 hover:opacity-100"
+          onClick={() => { const currentIdx = chapters.findIndex(c => c.id === selectedChapter); if (currentIdx < chapters.length - 1) setSelectedChapter(chapters[currentIdx+1].id); }}>
+          <ChevronRight className="w-5 h-5" /><span className="text-[10px] font-bold uppercase">Next</span>
         </Button>
       </footer>
 
       <style dangerouslySetInnerHTML={{ __html: `
         .bible-content p { margin-bottom: 1.5rem; }
-        .bible-content .v { 
-          font-size: 0.6em; 
-          font-weight: bold; 
-          vertical-align: super; 
-          margin-right: 0.3em; 
-          opacity: 0.4;
-        }
-        .bible-content [data-verse-id] {
-          cursor: pointer;
-          border-radius: 4px;
-          padding: 0 2px;
-          transition: background 0.2s;
-        }
-        .bible-content [data-verse-id]:hover {
-          background: rgba(var(--primary-rgb), 0.1);
-        }
-        .bible-content [data-verse-id].selected {
-          background: rgba(var(--primary-rgb), 0.2);
-          box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.3);
-        }
+        .bible-content .v { font-size: 0.6em; font-weight: bold; vertical-align: super; margin-right: 0.3em; opacity: 0.4; }
+        .bible-content [data-verse-id] { cursor: pointer; border-radius: 4px; padding: 0 2px; transition: background 0.2s; }
+        .bible-content [data-verse-id]:hover { background: rgba(var(--primary-rgb), 0.1); }
+        .bible-content [data-verse-id].selected { background: rgba(var(--primary-rgb), 0.2); box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.3); }
       `}} />
     </div>
   );
