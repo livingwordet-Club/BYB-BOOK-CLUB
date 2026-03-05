@@ -66,7 +66,17 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (Array.isArray(data)) setBibles(data);
+      if (data.error) {
+        console.error("Bible API Error:", data.error);
+        return;
+      }
+      if (Array.isArray(data)) {
+        setBibles(data);
+        // If current selection is not in the list, pick the first one
+        if (data.length > 0 && !data.find(b => b.id === selectedBible)) {
+          setSelectedBible(data[0].id);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch bibles", err);
     }
@@ -78,7 +88,16 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (Array.isArray(data)) setBooks(data);
+      if (data.error) {
+        console.error("Books API Error:", data.error);
+        return;
+      }
+      if (Array.isArray(data)) {
+        setBooks(data);
+        if (data.length > 0 && !data.find(b => b.id === selectedBook)) {
+          setSelectedBook(data[0].id);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch books", err);
     }
@@ -90,7 +109,16 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (Array.isArray(data)) setChapters(data);
+      if (data.error) {
+        console.error("Chapters API Error:", data.error);
+        return;
+      }
+      if (Array.isArray(data)) {
+        setChapters(data);
+        if (data.length > 0 && !data.find(c => c.id === selectedChapter)) {
+          setSelectedChapter(data[0].id);
+        }
+      }
     } catch (err) {
       console.error("Failed to fetch chapters", err);
     }
@@ -103,11 +131,19 @@ export default function BibleReader() {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
+      if (data.error) {
+        console.error("Content API Error:", data.error);
+        setContent(`<div class="text-center py-20 opacity-60 italic">Failed to load content: ${data.error}</div>`);
+        return;
+      }
       if (data && data.content) {
         setContent(data.content);
+      } else {
+        setContent('<div class="text-center py-20 opacity-60 italic">No content available for this chapter.</div>');
       }
     } catch (err) {
       console.error("Failed to fetch content", err);
+      setContent('<div class="text-center py-20 opacity-60 italic">An error occurred while fetching content.</div>');
     } finally {
       setLoading(false);
     }
