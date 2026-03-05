@@ -7,10 +7,42 @@ const { Pool } = pkg;
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import axios from "axios";
+import multer from "multer";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
+
+// --- PRE-START CHECKS ---
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// --- MULTER CONFIG FOR PROFILE PICS ---
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req: any, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    // Uses req.user.id from the authenticateToken middleware
+    cb(null, `profile-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only images are allowed") as any, false);
+    }
+  }
+});
 
 // --- SUPABASE CONNECTION ---
 const pool = new Pool({
@@ -20,6 +52,9 @@ const pool = new Pool({
 
 const app = express();
 app.use(express.json());
+
+// Serve uploaded files statically so they are accessible via URL
+app.use("/uploads", express.static(uploadDir));
 
 // --- INITIALIZE TABLES (Postgres Syntax) ---
 async function initDb() {
@@ -135,7 +170,7 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin === 1, name: user.name } });
 });
 
-// User Profile
+// User Profile & Image Upload
 app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
   const user = await pool.query("SELECT id, username, name, email, bio, profile_verse, profile_pic, is_admin FROM users WHERE id = $1", [req.user.id]);
   res.json(user.rows[0]);
@@ -145,6 +180,19 @@ app.put("/api/user/profile", authenticateToken, async (req: any, res) => {
   const { name, email, bio, profile_verse, profile_pic } = req.body;
   await pool.query("UPDATE users SET name = $1, email = $2, bio = $3, profile_verse = $4, profile_pic = $5 WHERE id = $6", [name, email, bio, profile_verse, profile_pic, req.user.id]);
   res.json({ success: true });
+});
+
+// NEW: Endpoint to handle profile picture upload via Multer
+app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), async (req: any, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+  
+  const filePath = `/uploads/${req.file.filename}`;
+  try {
+    await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [filePath, req.user.id]);
+    res.json({ success: true, url: filePath });
+  } catch (err) {
+    res.status(500).json({ error: "Database update failed" });
+  }
 });
 
 // Dashboard
