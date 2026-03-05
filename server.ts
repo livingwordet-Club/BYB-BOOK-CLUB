@@ -13,6 +13,7 @@ import fs from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
+const BIBLE_API_KEY = process.env.BIBLE_API_KEY; // American Bible Society API Key
 
 // --- PRE-START: Folder Management ---
 const rootDir = path.join(__dirname, "..");
@@ -224,19 +225,28 @@ app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), 
 // Dashboard Route
 app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
   try {
+    // 1. Fetch Trending Books
     const trending = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
+    
+    // 2. Fetch New Updates
     const updates = await pool.query("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5");
+    
+    // 3. Fetch Current User Reading
     const currentRead = await pool.query(`
       SELECT b.* FROM books b 
       JOIN user_reads ur ON b.id = ur.book_id 
       WHERE ur.user_id = $1 
       ORDER BY ur.last_read_at DESC LIMIT 1
     `, [req.user.id]);
+    
+    // 4. Fetch Friend Suggestions
     const suggestions = await pool.query(`
       SELECT id, username, name, profile_pic FROM users 
       WHERE id != $1 AND id NOT IN (SELECT friend_id FROM friends WHERE user_id = $1) 
       LIMIT 5
     `, [req.user.id]);
+    
+    // 5. Fetch Recent Messages
     const recentMessages = await pool.query(`
       SELECT m.*, u.username as sender_name, u.profile_pic as sender_pic 
       FROM messages m
@@ -245,16 +255,28 @@ app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
       ORDER BY m.created_at DESC LIMIT 5
     `, [req.user.id]);
 
+    // 6. Fetch User Activities (The specific part you gave me)
+    const activities = await pool.query(`
+      SELECT * FROM user_activity 
+      WHERE user_id = $1 
+      ORDER BY created_at DESC LIMIT 10
+    `, [req.user.id]);
+
+    // Send unified response using .rows (Postgres returns data in a 'rows' array)
     res.json({ 
       trending: trending.rows, 
       updates: updates.rows, 
-      currentRead: currentRead.rows[0], 
+      currentRead: currentRead.rows[0] || null, 
       suggestions: suggestions.rows,
-      recentMessages: recentMessages.rows 
+      recentMessages: recentMessages.rows,
+      activities: activities.rows 
     });
-  } catch (err) { res.status(500).json({ error: "Dashboard data fetch failed" }); }
-});
 
+  } catch (err) { 
+    console.error("Dashboard Error:", err);
+    res.status(500).json({ error: "Dashboard data fetch failed" }); 
+  }
+});
 // Books Routes
 app.get("/api/books", authenticateToken, async (req, res) => {
   const books = await pool.query("SELECT * FROM books");
