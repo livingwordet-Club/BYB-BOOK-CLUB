@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button } from '../components/UI';
 import { useNavigate } from 'react-router-dom';
-import { Book, TrendingUp, Clock, MessageCircle, UserPlus, BookOpen, ChevronRight } from 'lucide-react';
+import { Book, TrendingUp, Clock, MessageCircle, UserPlus, BookOpen, ChevronRight, Heart } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -136,6 +136,28 @@ export default function Dashboard() {
               </div>
             </Card>
           )}
+
+          <Card className="border-primary-800 bg-primary-900/20">
+            <h3 className="text-primary-50 font-bold mb-4 flex items-center gap-2">
+              <Heart className="w-5 h-5 text-red-400" /> Spiritual Journey
+            </h3>
+            <div className="space-y-4">
+              {data.activities && data.activities.length > 0 ? (
+                data.activities.map((act: any) => (
+                  <div key={act.id} className="p-3 bg-primary-800/30 rounded-xl border border-primary-700/50">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-primary-400">{act.type}</span>
+                      <span className="text-[10px] opacity-40">{new Date(act.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-sm text-primary-100 italic">"{act.content}"</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-primary-400 text-center py-4">No spiritual activity yet. Start reading the Bible!</p>
+              )}
+              <Button variant="outline" className="w-full text-xs" onClick={() => navigate('/bible')}>Open Bible</Button>
+            </div>
+          </Card>
 
           <Card className="border-primary-800 bg-primary-900/20">
             <h3 className="text-primary-50 font-bold mb-4 flex items-center gap-2">
