@@ -96,8 +96,8 @@ if (!adminCheck) {
     "bybmkcadmin", hashedPassword, "BYB MKC Admin", 1
   );
 }
-db.prepare("DELETE FROM users WHERE username != 'bybmkcadmin'").run();
-console.log("Database cleanup: All non-admin users purged.");
+//db.prepare("DELETE FROM users WHERE username != 'bybmkcadmin'").run();
+//console.log("Database cleanup: All non-admin users purged.");
 
 const app = express();
 app.use(express.json());
