@@ -6,7 +6,7 @@ import { Headphones, Play, Pause, Search, Clock, User, BookOpen, Volume2, ArrowL
 
 const FEATURED_BOOKS = [
   {
-    id: 'f1',
+    id: '391',
     title: 'The Confessions of Saint Augustine',
     authors: [{ first_name: 'Saint', last_name: 'Augustine' }],
     totallistenertime: '14:30:00',
@@ -14,7 +14,7 @@ const FEATURED_BOOKS = [
     url_librivox: 'https://librivox.org/the-confessions-of-saint-augustine/'
   },
   {
-    id: 'f2',
+    id: '104',
     title: 'The Pilgrim\'s Progress',
     authors: [{ first_name: 'John', last_name: 'Bunyan' }],
     totallistenertime: '09:15:00',
@@ -29,10 +29,66 @@ export default function AudioBookLibrary() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedBook, setSelectedBook] = useState<any>(null);
+  const [sections, setSections] = useState<any[]>([]);
+  const [loadingSections, setLoadingSections] = useState(false);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     fetchBooks();
   }, []);
+
+  useEffect(() => {
+    if (selectedBook) {
+      fetchSections(selectedBook.id);
+    } else {
+      setSections([]);
+      setIsPlaying(false);
+      setProgress(0);
+    }
+  }, [selectedBook]);
+
+  const fetchSections = async (bookId: string) => {
+    setLoadingSections(true);
+    try {
+      const res = await fetch(`https://librivox.org/api/feed/sections?audiobook_id=${bookId}&format=json`);
+      const data = await res.json();
+      if (data && data.sections) {
+        setSections(data.sections);
+      }
+    } catch (err) {
+      console.error("Failed to fetch sections:", err);
+    } finally {
+      setLoadingSections(false);
+    }
+  };
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      const p = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+      setProgress(p);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "00:00";
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const fetchBooks = async () => {
     setLoading(true);
