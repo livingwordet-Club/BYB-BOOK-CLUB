@@ -5,7 +5,7 @@ import { ThemeProvider, useTheme } from './hooks/useTheme';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import ProfileSetup from './pages/ProfileSetup';
-import ForgotPassword from './pages/forgotPassword';
+//import ForgotPassword from './pages/forgotPassword';
 import BibleReader from './pages/BibleReader';
 import BookLibrary from './pages/BookLibrary';
 import AudioBookLibrary from './pages/AudioBookLibrary';
@@ -162,7 +162,6 @@ function AppContent() {
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<AuthPage />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
               <Route path="/setup-profile" element={<PrivateRoute><ProfileSetup /></PrivateRoute>} />
               <Route path="/bible" element={<PrivateRoute><BibleReader /></PrivateRoute>} />
