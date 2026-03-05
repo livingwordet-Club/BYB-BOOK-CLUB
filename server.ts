@@ -15,7 +15,6 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
 
 // --- PRE-START: Folder Management ---
-// We go up one level from 'dist' to create 'uploads' in the root project folder
 const rootDir = path.join(__dirname, "..");
 const uploadDir = path.join(rootDir, "uploads");
 
@@ -74,6 +73,8 @@ async function initDb() {
         profile_pic TEXT,
         youtube_playlist TEXT,
         is_admin INTEGER DEFAULT 0,
+        reset_token TEXT,
+        reset_token_expiry TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -176,21 +177,24 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin === 1, name: user.name } });
 });
 
-app.post("/api/auth/reset-password-with-code", (req, res) => {
+// FIXED: Password Reset Route (Using pool.query instead of db)
+app.post("/api/auth/reset-password-with-code", async (req, res) => {
   const { email, code, newPassword } = req.body;
-  const user: any = db.prepare("SELECT * FROM users WHERE email = ? AND reset_token = ?").get(email, code);
-  
-  if (!user || new Date(user.reset_token_expiry) < new Date()) {
-    return res.status(400).json({ error: "Invalid or expired reset code" });
+  try {
+    const userRes = await pool.query("SELECT * FROM users WHERE email = $1 AND reset_token = $2", [email, code]);
+    const user = userRes.rows[0];
+    
+    if (!user || new Date(user.reset_token_expiry) < new Date()) {
+      return res.status(400).json({ error: "Invalid or expired reset code" });
+    }
+
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    await pool.query("UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE email = $2", [hashedPassword, email]);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Reset failed" });
   }
-
-  const hashedPassword = bcrypt.hashSync(newPassword, 10);
-  db.prepare("UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE email = ?").run(
-    hashedPassword,
-    email
-  );
-
-  res.json({ success: true });
 });
 
 // User Profile Routes
@@ -301,37 +305,12 @@ app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
 // Audiobooks (External API)
 app.get("/api/audiobooks", authenticateToken, async (req, res) => {
   try {
-    console.log("Fetching audiobooks from LibriVox...");
-    // Searching for Christian classics on LibriVox
-    // Using a more reliable query format
     const response = await axios.get("https://librivox.org/api/feed/audiobooks", {
-      params: {
-        format: "json",
-        limit: 50,
-        genre: "Christianity"
-      },
-      timeout: 10000 // 10 second timeout
+      params: { format: "json", limit: 50, genre: "Christianity" },
+      timeout: 10000
     });
-    
-    const books = response.data.books || [];
-    console.log(`Successfully fetched ${books.length} audiobooks from LibriVox`);
-    res.json(books);
-  } catch (error: any) {
-    console.error("LibriVox API Error:", error.message);
-    // If it's a timeout or network error, return empty array so frontend doesn't crash
-    res.status(200).json([]); 
-  }
-});
-
-app.get("/api/audiobooks/:id/sections", authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const response = await axios.get(`https://librivox.org/api/feed/sections?audiobook_id=${id}&format=json`);
-    res.json(response.data.sections || []);
-  } catch (error: any) {
-    console.error("LibriVox Sections Error:", error.message);
-    res.status(500).json({ error: "Failed to fetch chapters" });
-  }
+    res.json(response.data.books || []);
+  } catch (error) { res.json([]); }
 });
 
 // Account Management
@@ -349,12 +328,9 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // Correctly serve from the built 'dist' folder
     const distPath = path.join(rootDir, "dist");
-    
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      // Don't intercept API or Uploads
       if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
       res.sendFile(path.join(distPath, "index.html"));
     });
