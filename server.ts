@@ -428,4 +428,23 @@ app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req
     res.status(500).json({ error: "Failed to fetch chapter content" });
   }
 });
+
+// 5. Search the Bible
+app.get("/api/bible/:bibleId/search", authenticateToken, async (req, res) => {
+  try {
+    const { bibleId } = req.params;
+    const { query } = req.query; // e.g., /search?query=love
+    
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${bibleId}/search`, {
+      headers: { 'api-key': BIBLE_API_KEY },
+      params: { query: query, limit: 20 }
+    });
+    
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+
 startServer();
