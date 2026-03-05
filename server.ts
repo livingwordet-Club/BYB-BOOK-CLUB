@@ -176,6 +176,23 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin === 1, name: user.name } });
 });
 
+app.post("/api/auth/reset-password-with-code", (req, res) => {
+  const { email, code, newPassword } = req.body;
+  const user: any = db.prepare("SELECT * FROM users WHERE email = ? AND reset_token = ?").get(email, code);
+  
+  if (!user || new Date(user.reset_token_expiry) < new Date()) {
+    return res.status(400).json({ error: "Invalid or expired reset code" });
+  }
+
+  const hashedPassword = bcrypt.hashSync(newPassword, 10);
+  db.prepare("UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE email = ?").run(
+    hashedPassword,
+    email
+  );
+
+  res.json({ success: true });
+});
+
 // User Profile Routes
 app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
   const user = await pool.query("SELECT id, username, name, email, bio, profile_verse, profile_pic, is_admin FROM users WHERE id = $1", [req.user.id]);
