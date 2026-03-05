@@ -5,6 +5,7 @@ import { ThemeProvider, useTheme } from './hooks/useTheme';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import ProfileSetup from './pages/ProfileSetup';
+import ForgotPassword from './pages/ForgotPassword';
 import BibleReader from './pages/BibleReader';
 import BookLibrary from './pages/BookLibrary';
 import AudioBookLibrary from './pages/AudioBookLibrary';
@@ -149,11 +150,19 @@ function AppContent() {
   return (
     <Router>
       <div className={`min-h-screen flex flex-col transition-colors duration-300 relative overflow-hidden ${isDarkMode ? 'dark bg-[#050505]' : 'bg-[#F7F6E5]'}`}>
+        {isDarkMode && (
+          <div className="lens-background">
+            <div className="lens-glow" />
+            <div className="lens-grid" />
+            <div className="lens-scan-line" />
+          </div>
+        )}
         <div className="relative z-10 flex flex-col min-h-screen">
           <Navbar />
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<AuthPage />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
               <Route path="/setup-profile" element={<PrivateRoute><ProfileSetup /></PrivateRoute>} />
               <Route path="/bible" element={<PrivateRoute><BibleReader /></PrivateRoute>} />
