@@ -15,7 +15,10 @@ const __dirname = path.dirname(__filename);
 const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
 
 // --- PRE-START: Folder Management ---
-const uploadDir = path.join(__dirname, "uploads");
+// We go up one level from 'dist' to create 'uploads' in the root project folder
+const rootDir = path.join(__dirname, "..");
+const uploadDir = path.join(rootDir, "uploads");
+
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -23,7 +26,7 @@ if (!fs.existsSync(uploadDir)) {
 // --- MULTER CONFIG FOR PROFILE PICS ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    cb(null, uploadDir);
   },
   filename: (req: any, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -55,7 +58,7 @@ app.use(express.json());
 // Serve uploaded files statically
 app.use("/uploads", express.static(uploadDir));
 
-// --- INITIALIZE TABLES ---
+// --- INITIALIZE TABLES (Postgres Syntax) ---
 async function initDb() {
   const client = await pool.connect();
   try {
@@ -140,16 +143,20 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
   jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
     if (err) return res.status(403).json({ error: "Invalid token" });
-    const userRes = await pool.query("SELECT id, is_admin FROM users WHERE id = $1", [decoded.id]);
-    if (userRes.rows.length === 0) return res.status(401).json({ error: "User no longer exists" });
-    req.user = { ...decoded, isAdmin: userRes.rows[0].is_admin === 1 };
-    next();
+    try {
+      const userRes = await pool.query("SELECT id, is_admin FROM users WHERE id = $1", [decoded.id]);
+      if (userRes.rows.length === 0) return res.status(401).json({ error: "User no longer exists" });
+      req.user = { ...decoded, isAdmin: userRes.rows[0].is_admin === 1 };
+      next();
+    } catch (dbErr) {
+      res.status(500).json({ error: "Auth database error" });
+    }
   });
 };
 
 // --- ROUTES ---
 
-// Auth
+// Auth Routes
 app.post("/api/auth/register", async (req, res) => {
   const { username, password, email } = req.body;
   try {
@@ -169,7 +176,7 @@ app.post("/api/auth/login", async (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin === 1, name: user.name } });
 });
 
-// User Profile
+// User Profile Routes
 app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
   const user = await pool.query("SELECT id, username, name, email, bio, profile_verse, profile_pic, is_admin FROM users WHERE id = $1", [req.user.id]);
   res.json(user.rows[0]);
@@ -181,7 +188,7 @@ app.put("/api/user/profile", authenticateToken, async (req: any, res) => {
   res.json({ success: true });
 });
 
-// Profile Pic Upload
+// Profile Pic Upload (Multer)
 app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), async (req: any, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
   const filePath = `/uploads/${req.file.filename}`;
@@ -193,7 +200,7 @@ app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), 
   }
 });
 
-// Dashboard
+// Dashboard Route
 app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
   try {
     const trending = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
@@ -224,10 +231,10 @@ app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
       suggestions: suggestions.rows,
       recentMessages: recentMessages.rows 
     });
-  } catch (err) { res.status(500).json({ error: "Dashboard failed" }); }
+  } catch (err) { res.status(500).json({ error: "Dashboard data fetch failed" }); }
 });
 
-// Books
+// Books Routes
 app.get("/api/books", authenticateToken, async (req, res) => {
   const books = await pool.query("SELECT * FROM books");
   res.json(books.rows);
@@ -240,7 +247,7 @@ app.post("/api/books", authenticateToken, async (req: any, res) => {
     res.json({ success: true });
 });
 
-// Messages
+// Messages Routes
 app.get("/api/messages", authenticateToken, async (req: any, res) => {
   const msg = await pool.query("SELECT m.*, u.username as sender_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE receiver_id = $1 OR sender_id = $1 ORDER BY created_at ASC", [req.user.id]);
   res.json(msg.rows);
@@ -252,7 +259,7 @@ app.post("/api/messages", authenticateToken, async (req: any, res) => {
   res.json({ success: true });
 });
 
-// Activity
+// Activity Routes
 app.get("/api/activity", authenticateToken, async (req: any, res) => {
     const activity = await pool.query("SELECT * FROM user_activity WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
     res.json(activity.rows);
@@ -264,7 +271,7 @@ app.post("/api/activity", authenticateToken, async (req: any, res) => {
     res.json({ success: true });
 });
 
-// Admin Stats
+// Admin Stats Route
 app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
     if (!req.user.isAdmin) return res.sendStatus(403);
     const userCount = await pool.query("SELECT COUNT(*) FROM users");
@@ -285,7 +292,7 @@ app.get("/api/audiobooks", authenticateToken, async (req, res) => {
   } catch (error) { res.json([]); }
 });
 
-// Delete Account
+// Account Management
 app.delete("/api/user/delete", authenticateToken, async (req: any, res) => {
   try {
     await pool.query("DELETE FROM users WHERE id = $1", [req.user.id]);
@@ -300,10 +307,14 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
+    // Correctly serve from the built 'dist' folder
+    const distPath = path.join(rootDir, "dist");
+    
+    app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      // Don't intercept API or Uploads
       if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
   const PORT = process.env.PORT || 3000;
