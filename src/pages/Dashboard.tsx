@@ -142,7 +142,24 @@ export default function Dashboard() {
               <MessageCircle className="w-5 h-5 text-primary-400" /> Messages
             </h3>
             <div className="space-y-4">
-              <p className="text-sm text-primary-400 italic">No recent messages</p>
+              {data.recentMessages && data.recentMessages.length > 0 ? (
+                data.recentMessages.map((msg: any) => (
+                  <div 
+                    key={msg.id} 
+                    className="flex items-center gap-3 p-2 hover:bg-primary-800/50 rounded-xl cursor-pointer transition-colors group"
+                    onClick={() => navigate('/messages', { state: { selectedUser: { id: msg.sender_id, username: msg.sender_name, profile_pic: msg.sender_pic } } })}
+                  >
+                    <img src={msg.sender_pic || 'https://picsum.photos/seed/user/40'} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-primary-100 truncate">{msg.sender_name}</p>
+                      <p className="text-[10px] text-primary-400 truncate">{msg.content}</p>
+                    </div>
+                    <span className="text-[8px] text-primary-600">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-primary-400 italic">No recent messages</p>
+              )}
               <Button variant="outline" className="w-full" onClick={() => navigate('/messages')}>Open Inbox</Button>
             </div>
           </Card>
