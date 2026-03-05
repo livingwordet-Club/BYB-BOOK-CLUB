@@ -196,12 +196,27 @@ app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), 
 });
 
 // Dashboard
-app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
-  const trending = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
-  const updates = await pool.query("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5");
-  const currentRead = await pool.query("SELECT b.* FROM books b JOIN user_reads ur ON b.id = ur.book_id WHERE ur.user_id = $1 ORDER BY ur.last_read_at DESC LIMIT 1", [req.user.id]);
-  const suggestions = await pool.query("SELECT id, username, name, profile_pic FROM users WHERE id != $1 LIMIT 5", [req.user.id]);
-  res.json({ trending: trending.rows, updates: updates.rows, currentRead: currentRead.rows[0], suggestions: suggestions.rows });
+app.get("/api/dashboard", authenticateToken, (req: any, res) => {
+  const trending = db.prepare("SELECT * FROM books WHERE is_trending = 1 LIMIT 5").all();
+  const updates = db.prepare("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5").all();
+  const currentRead = db.prepare(`
+    SELECT b.* FROM books b 
+    JOIN user_reads ur ON b.id = ur.book_id 
+    WHERE ur.user_id = ? 
+    ORDER BY ur.last_read_at DESC LIMIT 1
+  `).get(req.user.id);
+  const suggestions = db.prepare("SELECT id, username, name, profile_pic FROM users WHERE id != ? AND id NOT IN (SELECT friend_id FROM friends WHERE user_id = ?) LIMIT 5").all(req.user.id, req.user.id);
+  
+  // Fetch recent messages for notification box
+  const recentMessages = db.prepare(`
+    SELECT m.*, u.username as sender_name, u.profile_pic as sender_pic 
+    FROM messages m
+    JOIN users u ON m.sender_id = u.id
+    WHERE m.receiver_id = ?
+    ORDER BY m.created_at DESC LIMIT 5
+  `).all(req.user.id);
+  
+  res.json({ trending, updates, currentRead, suggestions, recentMessages });
 });
 
 // Books
