@@ -53,18 +53,26 @@ export default function AudioBookLibrary() {
   }, [selectedBook]);
 
   useEffect(() => {
-    if (isPlaying && audioRef.current) {
-      audioRef.current.play().catch(console.error);
+    if (audioRef.current && sections[currentSectionIndex]) {
+      // Upgrade to https to avoid mixed content blocks
+      const url = sections[currentSectionIndex].listen_url.replace('http://', 'https://');
+      audioRef.current.src = url;
+      audioRef.current.load();
+      if (isPlaying) {
+        audioRef.current.play().catch(console.error);
+      }
     }
   }, [currentSectionIndex, sections]);
 
   const fetchSections = async (bookId: string) => {
     setLoadingSections(true);
     try {
-      const res = await fetch(`https://librivox.org/api/feed/sections?audiobook_id=${bookId}&format=json`);
+      const res = await fetch(`/api/audiobooks/${bookId}/sections`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       const data = await res.json();
-      if (data && data.sections) {
-        setSections(data.sections);
+      if (Array.isArray(data)) {
+        setSections(data);
       }
     } catch (err) {
       console.error("Failed to fetch sections:", err);
