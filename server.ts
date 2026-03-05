@@ -362,5 +362,70 @@ async function startServer() {
     console.log(`Server live on port ${PORT}`);
   });
 }
+// --- BIBLE API PROXY ROUTES ---
+const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 
+// 1. Get Bible Versions
+app.get("/api/bible/versions", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    // API.Bible wraps everything in a .data property
+    res.json(response.data.data); 
+  } catch (error) {
+    console.error("Bible Versions Error:", error);
+    res.status(500).json({ error: "Failed to fetch Bible versions" });
+  }
+});
+
+// 2. Get Books for a Specific Bible
+app.get("/api/bible/:bibleId/books", authenticateToken, async (req, res) => {
+  try {
+    const { bibleId } = req.params;
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${bibleId}/books`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch books" });
+  }
+});
+
+// 3. Get Chapters for a Specific Book
+app.get("/api/bible/:bibleId/books/:bookId/chapters", authenticateToken, async (req, res) => {
+  try {
+    const { bibleId, bookId } = req.params;
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${bibleId}/books/${bookId}/chapters`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch chapters" });
+  }
+});
+
+// 4. Get Chapter Content (HTML)
+app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req, res) => {
+  try {
+    const { bibleId, chapterId } = req.params;
+    const response = await axios.get(
+      `${BIBLE_BASE_URL}/bibles/${bibleId}/chapters/${chapterId}`, 
+      {
+        headers: { 'api-key': BIBLE_API_KEY },
+        params: { 
+          'content-type': 'html',
+          'include-notes': false,
+          'include-titles': true,
+          'include-chapter-numbers': false,
+          'include-verse-numbers': true,
+          'include-verse-spans': true 
+        }
+      }
+    );
+    res.json(response.data.data); // This returns the object with the .content string
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch chapter content" });
+  }
+});
 startServer();
