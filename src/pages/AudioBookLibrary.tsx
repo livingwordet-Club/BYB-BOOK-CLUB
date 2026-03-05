@@ -34,6 +34,8 @@ export default function AudioBookLibrary() {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const audioRef = React.useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -65,21 +67,33 @@ export default function AudioBookLibrary() {
     }
   };
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
+      try {
+        if (audioRef.current.paused) {
+          await audioRef.current.play();
+        } else {
+          audioRef.current.pause();
+        }
+      } catch (err) {
+        console.error("Playback error:", err);
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      const p = (audioRef.current.currentTime / audioRef.current.duration) * 100;
-      setProgress(p);
+      setCurrentTime(audioRef.current.currentTime);
+      if (audioRef.current.duration) {
+        const p = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+        setProgress(p);
+      }
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
     }
   };
 
@@ -241,24 +255,85 @@ export default function AudioBookLibrary() {
                     </div>
 
                     <div className="space-y-4">
-                      <div className="h-1 bg-stone-100 rounded-full overflow-hidden dark:bg-primary-800">
+                      {loadingSections ? (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2">
+                          <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-[10px] text-primary-500 font-bold uppercase tracking-widest">Loading Chapters...</span>
+                        </div>
+                      ) : sections.length > 0 && (
+                        <div className="mb-4">
+                          <h4 className="text-xs font-bold text-primary-500 uppercase mb-2">Chapters</h4>
+                          <div className="max-h-32 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+                            {sections.map((section, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => {
+                                  setCurrentSectionIndex(idx);
+                                  if (audioRef.current) {
+                                    audioRef.current.src = section.listen_url;
+                                    audioRef.current.play().catch(console.error);
+                                  }
+                                }}
+                                className={`w-full text-left text-xs p-2 rounded-lg transition-colors ${
+                                  currentSectionIndex === idx 
+                                    ? 'bg-primary-500/20 text-primary-400 font-bold' 
+                                    : 'text-stone-400 hover:bg-stone-100 dark:hover:bg-primary-800'
+                                }`}
+                              >
+                                {section.title || `Section ${idx + 1}`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <audio 
+                        ref={audioRef}
+                        src={sections[currentSectionIndex]?.listen_url}
+                        onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onEnded={() => {
+                          if (currentSectionIndex < sections.length - 1) {
+                            setCurrentSectionIndex(prev => prev + 1);
+                          } else {
+                            setIsPlaying(false);
+                          }
+                        }}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                      />
+
+                      <div className="h-1 bg-stone-100 rounded-full overflow-hidden dark:bg-primary-800 cursor-pointer" onClick={(e) => {
+                        if (audioRef.current) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const p = (e.clientX - rect.left) / rect.width;
+                          audioRef.current.currentTime = p * audioRef.current.duration;
+                        }
+                      }}>
                         <motion.div 
                           initial={{ width: 0 }}
-                          animate={{ width: '35%' }}
+                          animate={{ width: `${progress}%` }}
                           className="h-full bg-primary-500"
                         />
                       </div>
                       <div className="flex items-center justify-between text-[10px] font-bold text-stone-400 uppercase tracking-widest dark:text-primary-500">
-                        <span>12:45</span>
-                        <span>{selectedBook.totallistenertime || '00:00'}</span>
+                        <span>{formatTime(currentTime)}</span>
+                        <span>{formatTime(duration)}</span>
                       </div>
                       
                       <div className="flex items-center justify-center gap-8">
                         <Button variant="ghost" size="sm" className="text-stone-400 hover:text-primary-600">
                           <Volume2 className="w-5 h-5" />
                         </Button>
-                        <div className="w-14 h-14 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-200 cursor-pointer hover:scale-110 transition-transform dark:shadow-primary-950">
-                          <Play className="w-6 h-6 text-white fill-current ml-1" />
+                        <div 
+                          onClick={togglePlay}
+                          className="w-14 h-14 bg-primary-600 rounded-full flex items-center justify-center shadow-lg shadow-primary-200 cursor-pointer hover:scale-110 transition-transform dark:shadow-primary-950"
+                        >
+                          {isPlaying ? (
+                            <Pause className="w-6 h-6 text-white fill-current" />
+                          ) : (
+                            <Play className="w-6 h-6 text-white fill-current ml-1" />
+                          )}
                         </div>
                         <Button variant="ghost" size="sm" className="text-stone-400 hover:text-primary-600" onClick={() => window.open(selectedBook.url_librivox, '_blank')}>
                           <ExternalLink className="w-5 h-5" />
