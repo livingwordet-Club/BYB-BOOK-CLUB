@@ -27,7 +27,6 @@ const storage = multer.diskStorage({
   },
   filename: (req: any, file, cb) => {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    // Uses req.user.id from the authenticateToken middleware
     cb(null, `profile-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
@@ -53,10 +52,10 @@ const pool = new Pool({
 const app = express();
 app.use(express.json());
 
-// Serve uploaded files statically so they are accessible via URL
+// Serve uploaded files statically
 app.use("/uploads", express.static(uploadDir));
 
-// --- INITIALIZE TABLES (Postgres Syntax) ---
+// --- INITIALIZE TABLES ---
 async function initDb() {
   const client = await pool.connect();
   try {
@@ -118,7 +117,6 @@ async function initDb() {
       );
     `);
 
-    // Create Admin if not exists
     const adminCheck = await client.query("SELECT * FROM users WHERE username = $1", ["bybmkcadmin"]);
     if (adminCheck.rows.length === 0) {
       const hashedPassword = bcrypt.hashSync("@2026bybMKC", 10);
@@ -182,10 +180,8 @@ app.put("/api/user/profile", authenticateToken, async (req: any, res) => {
   res.json({ success: true });
 });
 
-// NEW: Endpoint to handle profile picture upload via Multer
 app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), async (req: any, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  
   const filePath = `/uploads/${req.file.filename}`;
   try {
     await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [filePath, req.user.id]);
@@ -195,28 +191,43 @@ app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), 
   }
 });
 
-// Dashboard
-app.get("/api/dashboard", authenticateToken, (req: any, res) => {
-  const trending = db.prepare("SELECT * FROM books WHERE is_trending = 1 LIMIT 5").all();
-  const updates = db.prepare("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5").all();
-  const currentRead = db.prepare(`
-    SELECT b.* FROM books b 
-    JOIN user_reads ur ON b.id = ur.book_id 
-    WHERE ur.user_id = ? 
-    ORDER BY ur.last_read_at DESC LIMIT 1
-  `).get(req.user.id);
-  const suggestions = db.prepare("SELECT id, username, name, profile_pic FROM users WHERE id != ? AND id NOT IN (SELECT friend_id FROM friends WHERE user_id = ?) LIMIT 5").all(req.user.id, req.user.id);
-  
-  // Fetch recent messages for notification box
-  const recentMessages = db.prepare(`
-    SELECT m.*, u.username as sender_name, u.profile_pic as sender_pic 
-    FROM messages m
-    JOIN users u ON m.sender_id = u.id
-    WHERE m.receiver_id = ?
-    ORDER BY m.created_at DESC LIMIT 5
-  `).all(req.user.id);
-  
-  res.json({ trending, updates, currentRead, suggestions, recentMessages });
+// --- FIXED DASHBOARD ROUTE (Changed from SQLite 'db' to Postgres 'pool') ---
+app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
+  try {
+    const trending = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
+    const updates = await pool.query("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5");
+    
+    const currentRead = await pool.query(`
+      SELECT b.* FROM books b 
+      JOIN user_reads ur ON b.id = ur.book_id 
+      WHERE ur.user_id = $1 
+      ORDER BY ur.last_read_at DESC LIMIT 1
+    `, [req.user.id]);
+
+    const suggestions = await pool.query(`
+      SELECT id, username, name, profile_pic FROM users 
+      WHERE id != $1 AND id NOT IN (SELECT friend_id FROM friends WHERE user_id = $1) 
+      LIMIT 5
+    `, [req.user.id]);
+    
+    const recentMessages = await pool.query(`
+      SELECT m.*, u.username as sender_name, u.profile_pic as sender_pic 
+      FROM messages m
+      JOIN users u ON m.sender_id = u.id
+      WHERE m.receiver_id = $1
+      ORDER BY m.created_at DESC LIMIT 5
+    `, [req.user.id]);
+
+    res.json({ 
+      trending: trending.rows, 
+      updates: updates.rows, 
+      currentRead: currentRead.rows[0], 
+      suggestions: suggestions.rows,
+      recentMessages: recentMessages.rows 
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Dashboard data fetch failed" });
+  }
 });
 
 // Books
@@ -266,7 +277,7 @@ app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
     res.json({ userCount: userCount.rows[0].count, bookCount: bookCount.rows[0].count, recentActivity: recentActivity.rows, allUsers: allUsers.rows });
 });
 
-// Audiobooks (External API)
+// Audiobooks
 app.get("/api/audiobooks", authenticateToken, async (req, res) => {
   try {
     const response = await axios.get("https://librivox.org/api/feed/audiobooks", {
@@ -285,14 +296,19 @@ app.delete("/api/user/delete", authenticateToken, async (req: any, res) => {
   } catch (error) { res.status(500).json({ error: "Failed to delete account" }); }
 });
 
+// --- SERVER START ---
 async function startServer() {
   await initDb();
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(__dirname));
-    app.get("*", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+    // Correct production serving
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*", (req, res) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
   }
   const PORT = process.env.PORT || 3000;
   app.listen(Number(PORT), "0.0.0.0", () => {
