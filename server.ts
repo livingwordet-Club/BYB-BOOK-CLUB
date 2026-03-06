@@ -17,7 +17,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
 const BIBLE_API_KEY = process.env.BIBLE_API_KEY; 
 
 // --- DIRECTORY SETUP ---
-// Ensuring the uploads folder exists relative to the project root
 const rootDir = path.join(__dirname, "..");
 const uploadDir = path.join(rootDir, "uploads");
 
@@ -27,7 +26,6 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // --- MULTER STORAGE ENGINE ---
-// Handles profile picture uploads with unique naming conventions
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -40,7 +38,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
+  limits: { fileSize: 5 * 1024 * 1024 }, 
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
       cb(null, true);
@@ -61,7 +59,6 @@ app.use(express.json());
 app.use("/uploads", express.static(uploadDir));
 
 // --- DATABASE SCHEMA INITIALIZATION ---
-// This runs on every startup to ensure the tables are ready
 async function initDb() {
   const client = await pool.connect();
   try {
@@ -143,7 +140,6 @@ const authenticateToken = (req: any, res: any, next: any) => {
 };
 
 // --- API ROUTES: AUTHENTICATION ---
-
 app.post("/api/auth/register", async (req, res) => {
   const { username, password, email } = req.body;
   try {
@@ -178,8 +174,7 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// --- API ROUTES: USER DATA ---
-
+// --- API ROUTES: USER PROFILE & PROGRESS ---
 app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
     try {
         const result = await pool.query("SELECT id, username, email, name, bio, profile_verse, profile_pic FROM users WHERE id = $1", [req.user.id]);
@@ -211,16 +206,37 @@ app.post("/api/user/profile", authenticateToken, upload.single('profilePic'), as
     }
 });
 
-// --- API ROUTES: BIBLE FEATURES ---
+app.get("/api/user/progress", authenticateToken, async (req: any, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT rp.*, b.title as book_title FROM reading_progress rp JOIN books b ON rp.book_id = b.id WHERE rp.user_id = $1 ORDER BY updated_at DESC", 
+            [req.user.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch progress" });
+    }
+});
 
+app.post("/api/user/progress", authenticateToken, async (req: any, res) => {
+    const { bookId, lastChapter } = req.body;
+    try {
+        await pool.query(
+            "INSERT INTO reading_progress (user_id, book_id, last_chapter) VALUES ($1, $2, $3) ON CONFLICT (user_id, book_id) DO UPDATE SET last_chapter = $3, updated_at = CURRENT_TIMESTAMP",
+            [req.user.id, bookId, lastChapter]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update progress" });
+    }
+});
+
+// --- API ROUTES: BIBLE FEATURES ---
 app.get('/api/user/bible-data', authenticateToken, async (req: any, res) => {
   try {
     const highlights = await pool.query("SELECT * FROM highlights WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
     const prayers = await pool.query("SELECT * FROM prayers WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
-    res.json({ 
-        highlights: highlights.rows, 
-        prayers: prayers.rows 
-    });
+    res.json({ highlights: highlights.rows, prayers: prayers.rows });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch user bible data" });
   }
@@ -292,12 +308,7 @@ app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req
   try {
     const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}`, {
         headers: { 'api-key': BIBLE_API_KEY },
-        params: { 
-            'content-type': 'html', 
-            'include-verse-numbers': true,
-            'include-notes': false,
-            'include-titles': true
-        }
+        params: { 'content-type': 'html', 'include-verse-numbers': true }
     });
     res.json(response.data.data);
   } catch (error) {
@@ -306,7 +317,6 @@ app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req
 });
 
 // --- API ROUTES: BOOK CLUB ---
-
 app.get("/api/books", async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM books ORDER BY created_at DESC");
@@ -326,13 +336,10 @@ app.get("/api/books/trending", async (req, res) => {
 });
 
 // --- SERVER LIFECYCLE ---
-
 async function startServer() {
-  // Initialize DB before starting Express
   await initDb();
 
   if (process.env.NODE_ENV !== "production") {
-    // Development Mode: Vite Middleware
     console.log("Starting in Development mode...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -340,7 +347,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Production Mode: Static Assets
     console.log("Starting in Production mode...");
     const distPath = path.join(rootDir, "dist");
     
@@ -350,7 +356,7 @@ async function startServer() {
             res.sendFile(path.join(distPath, "index.html"));
         });
     } else {
-        console.warn("Dist folder not found! Static files will not be served.");
+        console.warn("Dist folder not found!");
     }
   }
 
@@ -360,7 +366,7 @@ async function startServer() {
   });
 }
 
-// Global Error Handler for uncaught exceptions in the app
+// Global Error Handler
 app.use((err: any, req: any, res: any, next: any) => {
     console.error("Unhandled Server Error:", err.stack);
     res.status(500).json({ error: "Internal Server Error", details: err.message });
