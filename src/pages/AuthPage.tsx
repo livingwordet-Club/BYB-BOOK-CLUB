@@ -21,44 +21,37 @@ export default function AuthPage() {
   }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  e.preventDefault();
+  setError('');
+  
+  // Cleaned up: only Login or Register
+  const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+  const body = isLogin ? { username, password } : { username, password, email };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
     
-    // Omitted reset-password endpoint logic
-    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-    const body = isLogin ? { username, password } : { username, password, email };
+    const data = await res.json();
 
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      
-      let data;
-      const contentType = res.headers.get("content-type");
-      if (contentType && contentType.indexOf("application/json") !== -1) {
-        data = await res.json();
+    if (res.ok) {
+      if (isLogin) {
+        login(data.token, data.user);
+        navigate('/dashboard');
       } else {
-        const text = await res.text();
-        throw new Error(text || 'Server error');
+        setIsLogin(true);
+        alert('Registration successful! Please login.');
       }
-
-      if (res.ok) {
-        if (isLogin) {
-          login(data.token, data.user);
-          navigate('/dashboard');
-        } else {
-          setIsLogin(true);
-          alert('Registration successful! Please login.');
-        }
-      } else {
-        setError(data.error || 'Something went wrong');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect to server');
+    } else {
+      setError(data.error || 'Something went wrong');
     }
-  };
+  } catch (err: any) {
+    setError('Failed to connect to server');
+  }
+};
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
