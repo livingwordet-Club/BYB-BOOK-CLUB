@@ -3,11 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button, Input, Card } from '../components/UI';
-import { BookOpen, LogIn, UserPlus, Key } from 'lucide-react';
+import { BookOpen, LogIn, UserPlus } from 'lucide-react';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
-  const [isReset, setIsReset] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -25,10 +24,9 @@ export default function AuthPage() {
     e.preventDefault();
     setError('');
     
-    const endpoint = isReset ? '/api/auth/reset-password' : (isLogin ? '/api/auth/login' : '/api/auth/register');
-    const body = isReset 
-        ? { username, newPassword: password } 
-        : (isLogin ? { username, password } : { username, password, email });
+    // Omitted reset-password endpoint logic
+    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const body = isLogin ? { username, password } : { username, password, email };
 
     try {
       const res = await fetch(endpoint, {
@@ -47,13 +45,12 @@ export default function AuthPage() {
       }
 
       if (res.ok) {
-        if (isLogin && !isReset) {
+        if (isLogin) {
           login(data.token, data.user);
           navigate('/dashboard');
         } else {
           setIsLogin(true);
-          setIsReset(false);
-          alert(isReset ? 'Password reset successful!' : 'Registration successful! Please login.');
+          alert('Registration successful! Please login.');
         }
       } else {
         setError(data.error || 'Something went wrong');
@@ -81,14 +78,14 @@ export default function AuthPage() {
         <Card className="relative overflow-hidden dark:bg-primary-900 dark:border-primary-800">
           <AnimatePresence mode="wait">
             <motion.div
-              key={isReset ? 'reset' : (isLogin ? 'login' : 'signup')}
+              key={isLogin ? 'login' : 'signup'}
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -20, opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
               <h2 className="text-2xl font-bold text-primary-800 mb-6 dark:text-primary-100">
-                {isReset ? 'Reset Password' : (isLogin ? 'Welcome Back' : 'Join the Library')}
+                {isLogin ? 'Welcome Back' : 'Join the Library'}
               </h2>
               
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -103,7 +100,7 @@ export default function AuthPage() {
                   />
                 </div>
                 
-                {!isLogin && !isReset && (
+                {!isLogin && (
                   <div>
                     <label className="block text-sm font-medium text-primary-700 mb-1 dark:text-primary-300">Email</label>
                     <Input 
@@ -119,7 +116,7 @@ export default function AuthPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-primary-700 mb-1 dark:text-primary-300">
-                    {isReset ? 'New Password' : 'Password'}
+                    Password
                   </label>
                   <Input 
                     type="password" 
@@ -134,20 +131,17 @@ export default function AuthPage() {
                 {error && <p className="text-red-500 text-sm">{error}</p>}
 
                 <Button type="submit" className="w-full">
-                  {isReset ? 'Update Password' : (isLogin ? 'Sign In' : 'Create Account')}
+                  {isLogin ? 'Sign In' : 'Create Account'}
                 </Button>
               </form>
 
-              <div className="mt-6 space-y-2 text-center">
-                {!isReset && (
-                  <button 
-                    onClick={() => setIsLogin(!isLogin)}
-                    className="text-sm text-primary-600 hover:underline block w-full dark:text-primary-400"
-                  >
-                    {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-                  </button>
-                )}
-        
+              <div className="mt-6 text-center">
+                <button 
+                  onClick={() => setIsLogin(!isLogin)}
+                  className="text-sm text-primary-600 hover:underline block w-full dark:text-primary-400"
+                >
+                  {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+                </button>
               </div>
             </motion.div>
           </AnimatePresence>
