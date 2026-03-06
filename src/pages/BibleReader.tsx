@@ -9,7 +9,7 @@ import {
 import { Button } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
 
-// --- INTERNAL CONFIGURATION (Moved here to fix Render build errors) ---
+// --- INTERNAL CONFIGURATION ---
 const APP_SLOGAN = "The Word is Living and Active";
 const API_KEY = 'JT9CAQaoRjmSgdBxcT4tG';
 const BASE_URL = 'https://rest.api.bible/v1'; 
@@ -58,46 +58,56 @@ export default function BibleReader() {
 
   // --- API CALLS TO YOUR SERVER ---
   const fetchFromDb = async (endpoint: string, method = 'GET', body?: any) => {
-    const res = await fetch(endpoint, {
-      method,
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    return res.json();
+    try {
+        const res = await fetch(endpoint, {
+          method,
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: body ? JSON.stringify(body) : undefined
+        });
+        return await res.json();
+    } catch (err) {
+        console.error("API Error:", err);
+        return null;
+    }
   };
 
   useEffect(() => {
     const initLoad = async () => {
       setLoading(true);
       try {
-        const [versions, userData] = await Promise.all([
-          fetchFromDb('/api/bible/versions'),
-          fetchFromDb('/api/user/bible-data')
-        ]);
-        setBibles(versions);
-        setHighlights(userData.highlights || []);
-        setPrayers(userData.prayers || []);
-        if (versions.length > 0) setSelectedBible(versions[0].id);
+        const versions = await fetchFromDb('/api/bible/versions');
+        const userData = await fetchFromDb('/api/user/bible-data');
+        
+        if (versions) setBibles(versions);
+        if (userData) {
+            setHighlights(userData.highlights || []);
+            setPrayers(userData.prayers || []);
+        }
+        if (versions && versions.length > 0) setSelectedBible(versions[0].id);
       } catch (err) {
         console.error("Failed to load initial data", err);
       }
       setLoading(false);
     };
     initLoad();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (selectedBible) {
-      fetchFromDb(`/api/bible/${selectedBible}/books`).then(setBooks);
+      fetchFromDb(`/api/bible/${selectedBible}/books`).then(data => {
+          if (data) setBooks(data);
+      });
     }
   }, [selectedBible]);
 
   useEffect(() => {
     if (selectedBible && selectedBook) {
-      fetchFromDb(`/api/bible/${selectedBible}/books/${selectedBook}/chapters`).then(setChapters);
+      fetchFromDb(`/api/bible/${selectedBible}/books/${selectedBook}/chapters`).then(data => {
+          if (data) setChapters(data);
+      });
     }
   }, [selectedBible, selectedBook]);
 
@@ -106,8 +116,10 @@ export default function BibleReader() {
       setLoading(true);
       fetchFromDb(`/api/bible/${selectedBible}/chapters/${selectedChapter}`)
         .then(d => {
-            setContent(d.content);
-            if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+            if (d && d.content) {
+                setContent(d.content);
+                if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+            }
         })
         .finally(() => setLoading(false));
     }
@@ -133,7 +145,7 @@ export default function BibleReader() {
         content: activeVerse.text,
         color
       });
-      setHighlights([newH, ...highlights]);
+      if (newH) setHighlights([newH, ...highlights]);
       setActiveVerse(null);
     } catch (err) {
       console.error("Failed to save highlight", err);
@@ -147,7 +159,7 @@ export default function BibleReader() {
         verseRef: `${selectedBook} ${activeVerse.number}`,
         note: prayerNote
       });
-      setPrayers([newP, ...prayers]);
+      if (newP) setPrayers([newP, ...prayers]);
       setShowPrayerRecorder(false);
       setPrayerNote('');
       setActiveVerse(null);
@@ -158,24 +170,24 @@ export default function BibleReader() {
 
   const saveBookmark = async () => {
     if (!activeVerse) return;
-    // Placeholder for when you add bookmarks to the DB
     const newB = { id: Date.now(), ref: `${selectedBook} ${activeVerse.number}`, date: new Date().toLocaleDateString() };
     setBookmarks([newB, ...bookmarks]);
     setActiveVerse(null);
   };
 
   const renderVerses = () => {
-    // Parser for when standard text bracket arrays like [1] or HTML spans come through
+    if (!content) return null;
     const isHtmlSpan = content.includes('data-number');
     
     if (isHtmlSpan) {
         const parts = content.split(/(<span data-number="\d+".*?<\/span>)/g);
         return parts.map((part, i) => {
           if (part.includes('data-number')) {
-            const num = part.match(/data-number="(\d+)"/)?.[1] || "";
+            const numMatch = part.match(/data-number="(\d+)"/);
+            const num = numMatch ? numMatch[1] : "";
             return (
               <span 
-                key={i} 
+                key={`v-${i}`} 
                 onClick={(e) => handleVerseClick(e, num, part.replace(/<[^>]*>?/gm, ''))}
                 className="inline-flex items-center justify-center w-6 h-6 mr-2 text-[10px] font-black bg-blue-600/10 text-blue-500 rounded cursor-pointer hover:bg-blue-600 hover:text-white transition-all"
               >
@@ -183,7 +195,7 @@ export default function BibleReader() {
               </span>
             );
           }
-          return <span key={i} dangerouslySetInnerHTML={{ __html: part }} />;
+          return <span key={`text-${i}`} dangerouslySetInnerHTML={{ __html: part }} />;
         });
     } else {
         const parts = content.split(/(\[\d+\])/g);
@@ -193,7 +205,7 @@ export default function BibleReader() {
             const num = isVerseNum[1];
             return (
               <span 
-                key={i} 
+                key={`v-${i}`} 
                 onClick={(e) => handleVerseClick(e, num, parts[i+1] || "")}
                 className="inline-flex items-center justify-center w-6 h-6 mr-2 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md cursor-pointer hover:bg-blue-600 hover:text-white transition-all"
               >
@@ -201,7 +213,7 @@ export default function BibleReader() {
               </span>
             );
           }
-          return <span key={i} className="verse-text">{part}</span>;
+          return <span key={`text-${i}`} className="verse-text">{part}</span>;
         });
     }
   };
@@ -265,7 +277,7 @@ export default function BibleReader() {
             <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
                 <h3 className="text-5xl font-black italic tracking-tighter mb-12 text-white">Soul Journal</h3>
                 <div className="grid gap-6">
-                    {highlights.map(h => (
+                    {highlights.map((h: any) => (
                         <div key={h.id} className="p-8 rounded-[2.5rem] bg-white/5 border border-white/5 group hover:border-white/10 transition-all">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
@@ -274,7 +286,7 @@ export default function BibleReader() {
                             <p className="text-lg italic opacity-80 leading-relaxed">"{h.content}"</p>
                         </div>
                     ))}
-                    {prayers.map(p => (
+                    {prayers.map((p: any) => (
                         <div key={p.id} className="p-8 rounded-[2.5rem] bg-red-500/5 border border-red-500/10">
                              <div className="flex items-center gap-3 mb-4">
                                 <Hand size={14} className="text-red-500" />
@@ -296,7 +308,9 @@ export default function BibleReader() {
         <AnimatePresence>
           {activeVerse && (
             <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0 }}
+              initial={{ opacity: 0, scale: 0.9, y: 10 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0 }}
               style={{ left: `calc(${activeVerse.x}px - 140px)`, top: `${activeVerse.y}px` }}
               className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[300px]"
             >
@@ -359,7 +373,7 @@ export default function BibleReader() {
         </Button>
         <div className="flex flex-col items-center">
             <div className="w-32 h-[2px] bg-white/5 rounded-full mb-3 overflow-hidden">
-                <motion.div animate={{ width: `${(chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100}%` }} className="h-full bg-blue-600" />
+                <motion.div animate={{ width: `${chapters.length > 0 ? (chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100 : 0}%` }} className="h-full bg-blue-600" />
             </div>
             <span className="text-[10px] font-black tracking-[0.5em] opacity-20 uppercase">{APP_SLOGAN}</span>
         </div>
@@ -374,7 +388,7 @@ export default function BibleReader() {
       {/* --- NAVIGATION OVERLAY --- */}
       <AnimatePresence>
         {showNav && (
-          <>
+          <React.Fragment>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNav(false)} className="fixed inset-0 bg-black/95 backdrop-blur-md z-[1000]" />
             <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 30 }} className="fixed inset-y-0 left-0 w-full max-w-sm bg-stone-950 z-[1010] flex flex-col p-10">
                 <div className="flex justify-between items-center mb-12">
@@ -382,21 +396,21 @@ export default function BibleReader() {
                     <button onClick={() => setShowNav(false)}><X size={32}/></button>
                 </div>
                 <div className="space-y-1 overflow-y-auto custom-scroll pr-4">
-                    {books.map(b => (
+                    {books.map((b: any) => (
                         <button key={b.id} onClick={() => { setSelectedBook(b.id); setShowNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBook === b.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
                             {b.name}
                         </button>
                     ))}
                 </div>
             </motion.div>
-          </>
+          </React.Fragment>
         )}
       </AnimatePresence>
 
       {/* --- SETTINGS DRAWER --- */}
       <AnimatePresence>
         {showSettings && (
-          <>
+          <React.Fragment>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/60 z-[1000]" />
             <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 inset-x-0 bg-stone-900 p-12 rounded-t-[4rem] z-[1010] border-t border-white/10">
                 <div className="max-w-xl mx-auto">
@@ -414,7 +428,7 @@ export default function BibleReader() {
                     </div>
                 </div>
             </motion.div>
-          </>
+          </React.Fragment>
         )}
       </AnimatePresence>
 
