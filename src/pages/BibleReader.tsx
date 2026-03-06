@@ -4,7 +4,7 @@ import { Card, Button, Input } from '../components/UI';
 import { 
   Book, ChevronLeft, ChevronRight, Settings, Highlighter, 
   Bookmark, StickyNote, Heart, Search, Type, Palette, 
-  ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2
+  ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
@@ -61,25 +61,37 @@ export default function BibleReader() {
 
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // --- API HELPER ---
+  // --- API HELPER WITH DEBUGGING ---
   const fetchWithKey = async (endpoint: string) => {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      headers: { 
-        'api-key': API_KEY, 
-        'Accept': 'application/json' 
+    try {
+      const response = await fetch(`${BASE_URL}${endpoint}`, {
+        headers: { 
+          'api-key': API_KEY, 
+          'Accept': 'application/json' 
+        }
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        console.error("API Error Details:", errData);
+        // Specifically catch the "bad api-key" message from the server
+        if (response.status === 401 || errData.message?.includes('api-key')) {
+          throw new Error("Invalid API Key. Please verify the key in your Bible API dashboard.");
+        }
+        throw new Error(errData.message || `Server Error: ${response.status}`);
       }
-    });
-    if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.message || `Error ${response.status}`);
+      return response.json();
+    } catch (err: any) {
+      console.error("Fetch Failure:", err.message);
+      throw err;
     }
-    return response.json();
   };
 
   // --- INITIAL LOAD: Authorized Bibles ---
   useEffect(() => {
     const init = async () => {
       setLoading(true);
+      setGlobalError(null);
       try {
         const bibleData = await fetchWithKey('/bibles');
         if (bibleData.data && bibleData.data.length > 0) {
@@ -109,7 +121,7 @@ export default function BibleReader() {
             setBooks(data.data);
             if (!selectedBook) setSelectedBook(data.data[0].id);
           }
-        } catch (err) { console.error("Books error:", err); }
+        } catch (err) { console.error("Books load error:", err); }
       };
       loadBooks();
     }
@@ -126,7 +138,7 @@ export default function BibleReader() {
             const exists = data.data.find((c:any) => c.id === selectedChapter);
             if (!exists) setSelectedChapter(data.data[0].id);
           }
-        } catch (err) { console.error("Chapters error:", err); }
+        } catch (err) { console.error("Chapters load error:", err); }
       };
       loadChapters();
     }
@@ -141,7 +153,7 @@ export default function BibleReader() {
           const data = await fetchWithKey(`/bibles/${selectedBible}/chapters/${selectedChapter}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true&include-verse-spans=true`);
           if (data.data) setContent(data.data.content);
         } catch (err) {
-          setContent("<div class='text-center py-10 opacity-50'>Text not available for this version.</div>");
+          setContent("<div class='text-center py-10 opacity-50'>Scripture content could not be retrieved for this version.</div>");
         } finally {
           setLoading(false);
         }
@@ -156,7 +168,7 @@ export default function BibleReader() {
     try {
       const data = await fetchWithKey(`/bibles/${selectedBible}/search?query=${encodeURIComponent(searchQuery)}`);
       setSearchResults(data.data?.verses || []);
-    } catch (err) { console.error("Search error:", err); }
+    } catch (err) { console.error("Search failure:", err); }
     finally { setIsSearching(false); }
   };
 
@@ -176,7 +188,7 @@ export default function BibleReader() {
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold opacity-40">CH {chapters.find(c => c.id === selectedChapter)?.number || '1'}</span>
               <span className="w-1 h-1 bg-primary-500 rounded-full opacity-40"></span>
-              <span className="text-[10px] font-black text-primary-500">{bibles.find(b => b.id === selectedBible)?.abbreviation}</span>
+              <span className="text-[10px] font-black text-primary-500">{bibles.find(b => b.id === selectedBible)?.abbreviation || '---'}</span>
             </div>
           </div>
         </div>
@@ -187,10 +199,22 @@ export default function BibleReader() {
       <main className="flex-1 max-w-3xl mx-auto w-full px-8 py-12 md:py-20">
         {globalError ? (
           <div className="text-center py-20 flex flex-col items-center gap-6">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500"><X size={32} /></div>
-            <h2 className="text-xl font-black uppercase tracking-tight">API Connection Error</h2>
-            <p className="opacity-60 text-sm max-w-xs">{globalError}</p>
-            <Button onClick={() => window.location.reload()} variant="outline" className="rounded-full px-8">Refresh App</Button>
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
+              <AlertCircle size={32} />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-black uppercase tracking-tight">Authentication Failed</h2>
+              <p className="opacity-60 text-sm max-w-xs mx-auto">{globalError}</p>
+            </div>
+            <div className="bg-black/5 dark:bg-white/5 p-4 rounded-xl text-[10px] text-left font-mono max-w-sm">
+              <p className="font-bold mb-2">Troubleshooting Steps:</p>
+              <ul className="list-disc ml-4 space-y-1 opacity-70">
+                <li>Verify key: <strong>{API_KEY}</strong> matches your dashboard.</li>
+                <li>Ensure the key is set to "Active" in API.Bible.</li>
+                <li>Check for "Referrer" or "IP" restrictions in your settings.</li>
+              </ul>
+            </div>
+            <Button onClick={() => window.location.reload()} variant="outline" className="rounded-full px-8">Try Reconnecting</Button>
           </div>
         ) : loading ? (
           <div className="flex flex-col items-center justify-center py-40 gap-4">
@@ -277,7 +301,7 @@ export default function BibleReader() {
                   <Button variant="ghost" className="w-14 h-14 rounded-full" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id); }}><ZoomIn /></Button>
                 </div>
               </div>
-              <Button className="w-full h-16 text-sm font-black uppercase tracking-[0.3em] rounded-3xl" onClick={() => setShowSettings(false)}>Apply</Button>
+              <Button className="w-full h-16 text-sm font-black uppercase tracking-[0.3em] rounded-3xl" onClick={() => setShowSettings(false)}>Apply Changes</Button>
             </motion.div>
           </>
         )}
