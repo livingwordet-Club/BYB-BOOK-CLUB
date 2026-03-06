@@ -1,375 +1,371 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Settings, X, Menu, MessageSquare, BookOpen, 
-  ChevronLeft, ChevronRight, Loader2, Bookmark, 
-  Quote, PenTool, Heart, Trash2, ZoomIn, ZoomOut,
-  Library, Check, Palette, Hand, Mic, Save, Search
-} from 'lucide-react';
-import { Button } from '../components/UI';
-import { useAuth } from '../hooks/useAuth';
-import { APP_SLOGAN } from '../constants/appConfig';
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from 'url';
+import pkg from 'pg';
+const { Pool } = pkg;
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import axios from "axios";
+import multer from "multer";
+import fs from "fs";
 
-// --- CONFIG ---
-const HIGHLIGHT_COLORS = [
-  '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', 
-  '#06b6d4', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'
-];
+// --- GLOBAL CONFIGURATION ---
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
+const BIBLE_API_KEY = process.env.BIBLE_API_KEY; 
 
-const FONT_SIZES = [
-  { id: 'base', size: 'text-base', label: 'Normal' },
-  { id: 'lg', size: 'text-lg', label: 'Large' },
-  { id: 'xl', size: 'text-xl', label: 'Extra' }
-];
+// --- DIRECTORY SETUP ---
+// Ensuring the uploads folder exists relative to the project root
+const rootDir = path.join(__dirname, "..");
+const uploadDir = path.join(rootDir, "uploads");
 
-export default function BibleReader() {
-  const { token, user } = useAuth();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  
-  // Data State
-  const [bibles, setBibles] = useState<any[]>([]);
-  const [selectedBible, setSelectedBible] = useState<string>(''); 
-  const [books, setBooks] = useState<any[]>([]);
-  const [selectedBook, setSelectedBook] = useState<string>('');
-  const [chapters, setChapters] = useState<any[]>([]);
-  const [selectedChapter, setSelectedChapter] = useState<string>('');
-  const [content, setContent] = useState<string>('');
-  
-  // Server-Synced State
-  const [highlights, setHighlights] = useState<any[]>([]);
-  const [prayers, setPrayers] = useState<any[]>([]);
-  const [bookmarks, setBookmarks] = useState<any[]>([]);
-
-  // UI State
-  const [view, setView] = useState<'reader' | 'journal' | 'audio'>('reader');
-  const [loading, setLoading] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showNav, setShowNav] = useState(false);
-  const [fontSize, setFontSize] = useState('lg');
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Functional Pop-up State
-  const [activeVerse, setActiveVerse] = useState<{number: string, text: string, x: number, y: number} | null>(null);
-  const [showPrayerRecorder, setShowPrayerRecorder] = useState(false);
-  const [prayerNote, setPrayerNote] = useState('');
-
-  // --- API CALLS (TALKING TO YOUR UPDATED SERVER.TS) ---
-  
-  const fetchFromDb = async (endpoint: string, method = 'GET', body?: any) => {
-    const res = await fetch(endpoint, {
-      method,
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    return res.json();
-  };
-
-  useEffect(() => {
-    const initLoad = async () => {
-      setLoading(true);
-      const [versions, userData] = await Promise.all([
-        fetchFromDb('/api/bible/versions'),
-        fetchFromDb('/api/user/bible-data')
-      ]);
-      setBibles(versions);
-      setHighlights(userData.highlights || []);
-      setPrayers(userData.prayers || []);
-      if (versions.length > 0) setSelectedBible(versions[0].id);
-      setLoading(false);
-    };
-    initLoad();
-  }, []);
-
-  useEffect(() => {
-    if (selectedBible) {
-      fetchFromDb(`/api/bible/${selectedBible}/books`).then(setBooks);
-    }
-  }, [selectedBible]);
-
-  useEffect(() => {
-    if (selectedBible && selectedBook) {
-      fetchFromDb(`/api/bible/${selectedBible}/books/${selectedBook}/chapters`).then(setChapters);
-    }
-  }, [selectedBible, selectedBook]);
-
-  useEffect(() => {
-    if (selectedBible && selectedChapter && view === 'reader') {
-      setLoading(true);
-      fetchFromDb(`/api/bible/${selectedBible}/chapters/${selectedChapter}`)
-        .then(d => setContent(d.content))
-        .finally(() => setLoading(false));
-    }
-  }, [selectedBible, selectedChapter, view]);
-
-  // --- VERSE ACTIONS ---
-
-  const handleVerseClick = (e: React.MouseEvent, verseNum: string, text: string) => {
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
-    setActiveVerse({
-      number: verseNum,
-      text: text,
-      x: rect.left,
-      y: rect.top + window.scrollY - 100
-    });
-  };
-
-  const saveHighlight = async (color: string) => {
-    if (!activeVerse) return;
-    const newH = await fetchFromDb('/api/highlights', 'POST', {
-      verseRef: `${selectedBook} ${activeVerse.number}`,
-      content: activeVerse.text,
-      color
-    });
-    setHighlights([newH, ...highlights]);
-    setActiveVerse(null);
-  };
-
-  const handleSavePrayer = async () => {
-    const newP = await fetchFromDb('/api/prayers', 'POST', {
-      verseRef: activeVerse?.number,
-      note: prayerNote
-    });
-    setPrayers([newP, ...prayers]);
-    setShowPrayerRecorder(false);
-    setPrayerNote('');
-    setActiveVerse(null);
-  };
-
-  const renderVerses = () => {
-    // Regex matches the span-wrapped verses provided by the API
-    const parts = content.split(/(<span data-number="\d+".*?<\/span>)/g);
-    return parts.map((part, i) => {
-      if (part.includes('data-number')) {
-        const num = part.match(/data-number="(\d+)"/)?.[1] || "";
-        return (
-          <span 
-            key={i} 
-            onClick={(e) => handleVerseClick(e, num, part.replace(/<[^>]*>?/gm, ''))}
-            className="inline-flex items-center justify-center w-6 h-6 mr-2 text-[10px] font-black bg-blue-600/10 text-blue-500 rounded cursor-pointer hover:bg-blue-600 hover:text-white transition-all"
-          >
-            {num}
-          </span>
-        );
-      }
-      return <span key={i} dangerouslySetInnerHTML={{ __html: part }} />;
-    });
-  };
-
-  const currentFontSize = FONT_SIZES.find(f => f.id === fontSize) || FONT_SIZES[0];
-
-  return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#050505] text-stone-300 font-sans selection:bg-blue-500/30">
-      
-      {/* --- TOP NAVIGATION --- */}
-      <nav className="h-20 w-full flex-none flex items-center justify-between px-6 z-[100] border-b border-white/5 bg-[#050505]/80 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => setShowNav(true)} className="rounded-full text-white">
-            <Library size={22} />
-          </Button>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1">
-                {bibles.find(b => b.id === selectedBible)?.abbreviation || 'BIBLE'}
-            </span>
-            <h2 className="text-sm font-bold text-white truncate max-w-[120px]">
-              {books.find(b => b.id === selectedBook)?.name} {selectedChapter.split('.').pop()}
-            </h2>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center bg-white/5 rounded-full px-4 py-2 border border-white/10">
-                <Search size={14} className="opacity-30 mr-2" />
-                <input 
-                    type="text" placeholder="Search Scripture..." 
-                    className="bg-transparent outline-none text-xs w-32 placeholder:opacity-20"
-                    value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                />
-            </div>
-            <Button variant="ghost" onClick={() => setView(view === 'reader' ? 'journal' : 'reader')} className="rounded-full text-white">
-                {view === 'reader' ? <MessageSquare size={20}/> : <BookOpen size={20}/>}
-            </Button>
-            <Button variant="ghost" onClick={() => setShowSettings(true)} className="rounded-full text-white">
-                <Settings size={20} />
-            </Button>
-        </div>
-      </nav>
-
-      {/* --- CONTENT AREA --- */}
-      <main ref={scrollContainerRef} className="flex-1 overflow-y-auto relative custom-scroll">
-        <div className="max-w-3xl mx-auto px-8 py-16">
-          {view === 'reader' ? (
-            <div className="relative">
-              {loading ? (
-                <div className="flex flex-col items-center justify-center py-40 opacity-20">
-                    <Loader2 className="animate-spin mb-4" size={32} />
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em]">Illuminating Text</p>
-                </div>
-              ) : (
-                <article className={`${currentFontSize.size} leading-[2.3] font-serif text-stone-200`}>
-                  {renderVerses()}
-                </article>
-              )}
-            </div>
-          ) : view === 'journal' ? (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                <h3 className="text-5xl font-black italic tracking-tighter mb-12 text-white">Soul Journal</h3>
-                <div className="grid gap-6">
-                    {highlights.map(h => (
-                        <div key={h.id} className="p-8 rounded-[2.5rem] bg-white/5 border border-white/5 group hover:border-white/10 transition-all">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
-                                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">{h.verse_ref}</span>
-                            </div>
-                            <p className="text-lg italic opacity-80 leading-relaxed">"{h.content}"</p>
-                        </div>
-                    ))}
-                    {prayers.map(p => (
-                        <div key={p.id} className="p-8 rounded-[2.5rem] bg-red-500/5 border border-red-500/10">
-                             <div className="flex items-center gap-3 mb-4">
-                                <Hand size={14} className="text-red-500" />
-                                <span className="text-[10px] font-black uppercase text-red-500 tracking-widest">Prayer Note • Verse {p.verse_ref}</span>
-                            </div>
-                            <p className="text-stone-300">{p.note}</p>
-                        </div>
-                    ))}
-                </div>
-            </div>
-          ) : (
-            <div className="text-center py-40">
-                <p className="opacity-20 font-black uppercase tracking-widest">Audiobook Engine Ready</p>
-            </div>
-          )}
-        </div>
-
-        {/* --- FLOATING VERSE MENU --- */}
-        <AnimatePresence>
-          {activeVerse && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0 }}
-              style={{ left: `calc(${activeVerse.x}px - 140px)`, top: `${activeVerse.y}px` }}
-              className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[300px]"
-            >
-              <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
-                <span className="text-[10px] font-black text-blue-500 uppercase">Verse {activeVerse.number}</span>
-                <button onClick={() => setActiveVerse(null)} className="opacity-30 hover:opacity-100"><X size={14}/></button>
-              </div>
-              <div className="grid grid-cols-5 gap-2 mb-4">
-                {HIGHLIGHT_COLORS.map(c => (
-                  <button key={c} onClick={() => saveHighlight(c)} className="w-8 h-8 rounded-full hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowPrayerRecorder(true)} className="flex-1 flex items-center justify-center gap-2 bg-white/5 p-3 rounded-2xl text-[9px] font-black uppercase">
-                  <Hand size={14} className="text-red-500" /> Prayer
-                </button>
-                <button className="flex-1 flex items-center justify-center gap-2 bg-white/5 p-3 rounded-2xl text-[9px] font-black uppercase">
-                  <Bookmark size={14} className="text-blue-500" /> Save
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* --- PRAYER MODAL --- */}
-      <AnimatePresence>
-        {showPrayerRecorder && (
-          <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm">
-            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-stone-900 w-full max-w-md p-10 rounded-[3.5rem] border border-white/10">
-                <h3 className="text-2xl font-black italic mb-6">Sacred Note</h3>
-                <div className="bg-white/5 p-6 rounded-[2rem] mb-6">
-                    <textarea 
-                        value={prayerNote} onChange={(e) => setPrayerNote(e.target.value)}
-                        placeholder="Speak to the Father..." 
-                        className="w-full bg-transparent border-none outline-none text-lg italic min-h-[150px] placeholder:opacity-10"
-                    />
-                </div>
-                <Button onClick={handleSavePrayer} className="w-full bg-blue-600 py-6 rounded-2xl font-black uppercase tracking-widest">
-                    <Save size={18} className="mr-2"/> Commit to Heart
-                </Button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* --- FOOTER SLOGAN --- */}
-      <footer className="h-20 w-full flex-none flex items-center justify-between px-10 border-t border-white/5 bg-[#050505] z-[100]">
-        <Button variant="ghost" onClick={() => {
-            const idx = chapters.findIndex(c => c.id === selectedChapter);
-            if (idx > 0) setSelectedChapter(chapters[idx-1].id);
-          }} className="text-white opacity-40 hover:opacity-100 transition-opacity">
-          <ChevronLeft size={28} />
-        </Button>
-        <div className="flex flex-col items-center">
-            <div className="w-32 h-[2px] bg-white/5 rounded-full mb-3 overflow-hidden">
-                <motion.div animate={{ width: `${(chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100}%` }} className="h-full bg-blue-600" />
-            </div>
-            <span className="text-[10px] font-black tracking-[0.5em] opacity-20 uppercase">{APP_SLOGAN}</span>
-        </div>
-        <Button variant="ghost" onClick={() => {
-            const idx = chapters.findIndex(c => c.id === selectedChapter);
-            if (idx < chapters.length - 1) setSelectedChapter(chapters[idx+1].id);
-          }} className="text-white opacity-40 hover:opacity-100 transition-opacity">
-          <ChevronRight size={28} />
-        </Button>
-      </footer>
-
-      {/* --- NAVIGATION OVERLAY --- */}
-      <AnimatePresence>
-        {showNav && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNav(false)} className="fixed inset-0 bg-black/95 backdrop-blur-md z-[1000]" />
-            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 30 }} className="fixed inset-y-0 left-0 w-full max-w-sm bg-stone-950 z-[1010] flex flex-col p-10">
-                <div className="flex justify-between items-center mb-12">
-                    <h2 className="text-4xl font-black italic tracking-tighter">Library</h2>
-                    <button onClick={() => setShowNav(false)}><X size={32}/></button>
-                </div>
-                <div className="space-y-1 overflow-y-auto custom-scroll pr-4">
-                    {books.map(b => (
-                        <button key={b.id} onClick={() => { setSelectedBook(b.id); setShowNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBook === b.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
-                            {b.name}
-                        </button>
-                    ))}
-                </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* --- SETTINGS DRAWER --- */}
-      <AnimatePresence>
-        {showSettings && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/60 z-[1000]" />
-            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 inset-x-0 bg-stone-900 p-12 rounded-t-[4rem] z-[1010] border-t border-white/10">
-                <div className="max-w-xl mx-auto">
-                    <div className="flex justify-between items-center mb-10">
-                        <span className="text-[10px] font-black uppercase tracking-widest opacity-30">Reading Experience</span>
-                        <button onClick={() => setShowSettings(false)}><X/></button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-6 mb-12">
-                        {FONT_SIZES.map(f => (
-                            <button key={f.id} onClick={() => setFontSize(f.id)} className={`p-6 rounded-[2rem] border transition-all ${fontSize === f.id ? 'bg-blue-600 border-blue-500' : 'bg-white/5 border-transparent opacity-40'}`}>
-                                <span className={`font-black ${f.size === 'text-base' ? 'text-sm' : f.size === 'text-lg' ? 'text-lg' : 'text-2xl'}`}>Aa</span>
-                                <p className="text-[9px] font-black uppercase mt-2">{f.label}</p>
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.05); border-radius: 10px; }
-        .font-serif { font-family: 'Crimson Pro', serif; }
-        ::selection { background: rgba(59, 130, 246, 0.4); }
-      `}} />
-    </div>
-  );
+if (!fs.existsSync(uploadDir)) {
+    console.log("Creating uploads directory at:", uploadDir);
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
+
+// --- MULTER STORAGE ENGINE ---
+// Handles profile picture uploads with unique naming conventions
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req: any, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, `profile-${req.user?.id || 'anon'}-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only images are allowed") as any, false);
+    }
+  }
+});
+
+// --- POSTGRES DATABASE CONNECTION ---
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+const app = express();
+app.use(express.json());
+app.use("/uploads", express.static(uploadDir));
+
+// --- DATABASE SCHEMA INITIALIZATION ---
+// This runs on every startup to ensure the tables are ready
+async function initDb() {
+  const client = await pool.connect();
+  try {
+    console.log("Initializing database tables...");
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        bio TEXT,
+        profile_verse TEXT,
+        profile_pic TEXT,
+        is_admin INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS highlights (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        verse_ref TEXT NOT NULL,
+        content TEXT,
+        color TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS prayers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        verse_ref TEXT,
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS books (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        author TEXT,
+        cover_url TEXT,
+        content TEXT,
+        is_trending INTEGER DEFAULT 0,
+        is_new INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS reading_progress (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        book_id INTEGER REFERENCES books(id) ON DELETE CASCADE,
+        last_chapter TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log("Database successfully initialized.");
+  } catch (err) {
+    console.error("Error during database initialization:", err);
+  } finally {
+    client.release();
+  }
+}
+
+// --- AUTHENTICATION MIDDLEWARE ---
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {
+    return res.status(401).json({ error: "Access denied. No token provided." });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid or expired token." });
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
+// --- API ROUTES: AUTHENTICATION ---
+
+app.post("/api/auth/register", async (req, res) => {
+  const { username, password, email } = req.body;
+  try {
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const result = await pool.query(
+      "INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id, username", 
+      [username, hashedPassword, email]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e: any) {
+    res.status(400).json({ error: "Registration failed. User may already exist." });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const userRes = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    const user = userRes.rows[0];
+    
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.status(401).json({ error: "Invalid username or password" });
+    }
+    
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ 
+      token, 
+      user: { id: user.id, username: user.username, email: user.email } 
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Server error during login" });
+  }
+});
+
+// --- API ROUTES: USER DATA ---
+
+app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
+    try {
+        const result = await pool.query("SELECT id, username, email, name, bio, profile_verse, profile_pic FROM users WHERE id = $1", [req.user.id]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch profile" });
+    }
+});
+
+app.post("/api/user/profile", authenticateToken, upload.single('profilePic'), async (req: any, res) => {
+    const { name, bio, profile_verse } = req.body;
+    const profilePic = req.file ? `/uploads/${req.file.filename}` : undefined;
+    
+    try {
+        if (profilePic) {
+            await pool.query(
+                "UPDATE users SET name = $1, bio = $2, profile_verse = $3, profile_pic = $4 WHERE id = $5",
+                [name, bio, profile_verse, profilePic, req.user.id]
+            );
+        } else {
+            await pool.query(
+                "UPDATE users SET name = $1, bio = $2, profile_verse = $3 WHERE id = $4",
+                [name, bio, profile_verse, req.user.id]
+            );
+        }
+        res.json({ message: "Profile updated successfully" });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to update profile" });
+    }
+});
+
+// --- API ROUTES: BIBLE FEATURES ---
+
+app.get('/api/user/bible-data', authenticateToken, async (req: any, res) => {
+  try {
+    const highlights = await pool.query("SELECT * FROM highlights WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
+    const prayers = await pool.query("SELECT * FROM prayers WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
+    res.json({ 
+        highlights: highlights.rows, 
+        prayers: prayers.rows 
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch user bible data" });
+  }
+});
+
+app.post('/api/highlights', authenticateToken, async (req: any, res) => {
+  const { verseRef, content, color } = req.body;
+  try {
+    const result = await pool.query(
+      "INSERT INTO highlights (user_id, verse_ref, content, color) VALUES ($1, $2, $3, $4) RETURNING *",
+      [req.user.id, verseRef, content, color]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to save highlight" });
+  }
+});
+
+app.post('/api/prayers', authenticateToken, async (req: any, res) => {
+  const { verseRef, note } = req.body;
+  try {
+    const result = await pool.query(
+      "INSERT INTO prayers (user_id, verse_ref, note) VALUES ($1, $2, $3) RETURNING *",
+      [req.user.id, verseRef, note]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to save prayer" });
+  }
+});
+
+// --- API ROUTES: EXTERNAL BIBLE API PROXY ---
+const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
+
+app.get("/api/bible/versions", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, { 
+        headers: { 'api-key': BIBLE_API_KEY } 
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch Bible versions" });
+  }
+});
+
+app.get("/api/bible/:bibleId/books", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books`, { 
+        headers: { 'api-key': BIBLE_API_KEY } 
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch books" });
+  }
+});
+
+app.get("/api/bible/:bibleId/books/:bookId/chapters", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books/${req.params.bookId}/chapters`, { 
+        headers: { 'api-key': BIBLE_API_KEY } 
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch chapters" });
+  }
+});
+
+app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}`, {
+        headers: { 'api-key': BIBLE_API_KEY },
+        params: { 
+            'content-type': 'html', 
+            'include-verse-numbers': true,
+            'include-notes': false,
+            'include-titles': true
+        }
+    });
+    res.json(response.data.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch scripture content" });
+  }
+});
+
+// --- API ROUTES: BOOK CLUB ---
+
+app.get("/api/books", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM books ORDER BY created_at DESC");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch books" });
+    }
+});
+
+app.get("/api/books/trending", async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch trending books" });
+    }
+});
+
+// --- SERVER LIFECYCLE ---
+
+async function startServer() {
+  // Initialize DB before starting Express
+  await initDb();
+
+  if (process.env.NODE_ENV !== "production") {
+    // Development Mode: Vite Middleware
+    console.log("Starting in Development mode...");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Production Mode: Static Assets
+    console.log("Starting in Production mode...");
+    const distPath = path.join(rootDir, "dist");
+    
+    if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+            res.sendFile(path.join(distPath, "index.html"));
+        });
+    } else {
+        console.warn("Dist folder not found! Static files will not be served.");
+    }
+  }
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`BYB Book Club Server is live at http://localhost:${PORT}`);
+  });
+}
+
+// Global Error Handler for uncaught exceptions in the app
+app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled Server Error:", err.stack);
+    res.status(500).json({ error: "Internal Server Error", details: err.message });
+});
+
+startServer().catch(err => {
+    console.error("Failed to start server process:", err);
+});
