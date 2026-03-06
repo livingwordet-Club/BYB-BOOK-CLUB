@@ -18,7 +18,7 @@ export default function Footer() {
         
         <div className="text-sm text-center md:text-right">
           <p className="font-medium">Powered by Living word | ET 2026©</p>
-          <p className="text-xs opacity-70 mt-1">Spiritual Wisdom for the Modern Soul</p>
+          <p className="text-xs opacity-70 mt-1">Scripture. Spirit. Life.</p>
         </div>
       </div>
     </footer>
