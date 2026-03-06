@@ -4,16 +4,17 @@ import { Card, Button, Input } from '../components/UI';
 import { 
   Book, ChevronLeft, ChevronRight, Settings, Highlighter, 
   Bookmark, StickyNote, Heart, Search, Type, Palette, 
-  ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2, AlertCircle
+  ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2, AlertCircle, Key
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 
 // --- CONFIG ---
+// Verify this key matches exactly what is in your API.Bible dashboard
 const API_KEY = 'JT9CAQaoRjmSgdBxcT4tG';
 const BASE_URL = 'https://api.scripture.api.bible/v1';
 
-// Versions allowed by your plan
+// Versions allowed by your specific plan
 const PREFERRED_VERSIONS = ['NKJV', 'AMP', 'NIV'];
 
 const THEMES = [
@@ -61,7 +62,7 @@ export default function BibleReader() {
 
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // --- API HELPER WITH DEBUGGING ---
+  // --- API HELPER WITH STRICT AUTH CHECKING ---
   const fetchWithKey = async (endpoint: string) => {
     try {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
@@ -73,21 +74,23 @@ export default function BibleReader() {
 
       if (!response.ok) {
         const errData = await response.json();
-        console.error("API Error Details:", errData);
-        // Specifically catch the "bad api-key" message from the server
-        if (response.status === 401 || errData.message?.includes('api-key')) {
-          throw new Error("Invalid API Key. Please verify the key in your Bible API dashboard.");
+        // If it's a 401, it's a key issue. If it's a 403, the key is fine but the plan is restricted.
+        if (response.status === 401) {
+          throw new Error("Bad API Key: The server rejected this key. Please check your dashboard.");
         }
-        throw new Error(errData.message || `Server Error: ${response.status}`);
+        if (response.status === 403) {
+          throw new Error("Plan Restricted: Your key works, but this specific Bible version isn't in your plan.");
+        }
+        throw new Error(errData.message || `API Error: ${response.status}`);
       }
       return response.json();
     } catch (err: any) {
-      console.error("Fetch Failure:", err.message);
+      console.error("API Connection Error:", err.message);
       throw err;
     }
   };
 
-  // --- INITIAL LOAD: Authorized Bibles ---
+  // --- INITIAL LOAD ---
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -121,7 +124,7 @@ export default function BibleReader() {
             setBooks(data.data);
             if (!selectedBook) setSelectedBook(data.data[0].id);
           }
-        } catch (err) { console.error("Books load error:", err); }
+        } catch (err) { console.error("Books error:", err); }
       };
       loadBooks();
     }
@@ -138,7 +141,7 @@ export default function BibleReader() {
             const exists = data.data.find((c:any) => c.id === selectedChapter);
             if (!exists) setSelectedChapter(data.data[0].id);
           }
-        } catch (err) { console.error("Chapters load error:", err); }
+        } catch (err) { console.error("Chapters error:", err); }
       };
       loadChapters();
     }
@@ -153,7 +156,7 @@ export default function BibleReader() {
           const data = await fetchWithKey(`/bibles/${selectedBible}/chapters/${selectedChapter}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true&include-verse-spans=true`);
           if (data.data) setContent(data.data.content);
         } catch (err) {
-          setContent("<div class='text-center py-10 opacity-50'>Scripture content could not be retrieved for this version.</div>");
+          setContent("<div class='text-center py-10 opacity-50'>Scripture content not available.</div>");
         } finally {
           setLoading(false);
         }
@@ -168,7 +171,7 @@ export default function BibleReader() {
     try {
       const data = await fetchWithKey(`/bibles/${selectedBible}/search?query=${encodeURIComponent(searchQuery)}`);
       setSearchResults(data.data?.verses || []);
-    } catch (err) { console.error("Search failure:", err); }
+    } catch (err) { console.error("Search failed:", err); }
     finally { setIsSearching(false); }
   };
 
@@ -183,12 +186,12 @@ export default function BibleReader() {
           <Button variant="ghost" onClick={() => setShowNav(true)} className="rounded-full"><Menu /></Button>
           <div className="flex flex-col">
             <h1 className="text-sm font-black uppercase tracking-widest leading-none mb-1">
-              {books.find(b => b.id === selectedBook)?.name || 'Loading...'}
+              {books.find(b => b.id === selectedBook)?.name || 'Library'}
             </h1>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold opacity-40">CH {chapters.find(c => c.id === selectedChapter)?.number || '1'}</span>
+              <span className="text-[10px] font-bold opacity-40">CH {chapters.find(c => c.id === selectedChapter)?.number || '--'}</span>
               <span className="w-1 h-1 bg-primary-500 rounded-full opacity-40"></span>
-              <span className="text-[10px] font-black text-primary-500">{bibles.find(b => b.id === selectedBible)?.abbreviation || '---'}</span>
+              <span className="text-[10px] font-black text-primary-500 uppercase">{bibles.find(b => b.id === selectedBible)?.abbreviation || '---'}</span>
             </div>
           </div>
         </div>
@@ -198,23 +201,32 @@ export default function BibleReader() {
       {/* READER CONTENT */}
       <main className="flex-1 max-w-3xl mx-auto w-full px-8 py-12 md:py-20">
         {globalError ? (
-          <div className="text-center py-20 flex flex-col items-center gap-6">
-            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
-              <AlertCircle size={32} />
+          <div className="text-center py-10 flex flex-col items-center gap-8">
+            <div className="relative">
+              <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 animate-pulse">
+                <AlertCircle size={40} />
+              </div>
+              <Key className="absolute -bottom-2 -right-2 text-red-500 bg-white dark:bg-stone-900 rounded-full p-1" size={24} />
             </div>
-            <div className="space-y-2">
-              <h2 className="text-xl font-black uppercase tracking-tight">Authentication Failed</h2>
-              <p className="opacity-60 text-sm max-w-xs mx-auto">{globalError}</p>
+            
+            <div className="space-y-4">
+              <h2 className="text-2xl font-black uppercase tracking-tighter text-red-500">Authentication Error</h2>
+              <p className="opacity-60 text-sm max-w-sm mx-auto leading-relaxed">
+                The API key provided was rejected. This usually happens if the key is new or has domain restrictions.
+              </p>
             </div>
-            <div className="bg-black/5 dark:bg-white/5 p-4 rounded-xl text-[10px] text-left font-mono max-w-sm">
-              <p className="font-bold mb-2">Troubleshooting Steps:</p>
-              <ul className="list-disc ml-4 space-y-1 opacity-70">
-                <li>Verify key: <strong>{API_KEY}</strong> matches your dashboard.</li>
-                <li>Ensure the key is set to "Active" in API.Bible.</li>
-                <li>Check for "Referrer" or "IP" restrictions in your settings.</li>
-              </ul>
+
+            <div className="grid grid-cols-1 gap-4 w-full max-w-sm">
+              <div className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] text-left border border-red-500/20">
+                <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-4">Fix these in API.Bible Dashboard</p>
+                <ul className="space-y-3 text-xs font-bold opacity-80">
+                  <li className="flex gap-3"><span className="text-red-500">01</span> Check if key status is "Active"</li>
+                  <li className="flex gap-3"><span className="text-red-500">02</span> Remove all "Allowed Referrers" for testing</li>
+                  <li className="flex gap-3"><span className="text-red-500">03</span> Ensure NKJV/NIV/AMP are in your selected plan</li>
+                </ul>
+              </div>
+              <Button onClick={() => window.location.reload()} className="h-16 rounded-[2rem] font-black uppercase tracking-widest shadow-xl shadow-primary-500/20">Retry Connection</Button>
             </div>
-            <Button onClick={() => window.location.reload()} variant="outline" className="rounded-full px-8">Try Reconnecting</Button>
           </div>
         ) : loading ? (
           <div className="flex flex-col items-center justify-center py-40 gap-4">
@@ -246,11 +258,11 @@ export default function BibleReader() {
                  <Button variant="ghost" onClick={() => setShowNav(false)}><X /></Button>
                </div>
                
-               <div className="p-6 bg-black/5 dark:bg-white/5 mx-6 mt-6 rounded-2xl">
-                 <p className="text-[10px] font-black uppercase opacity-30 mb-4 tracking-widest">Select Translation</p>
+               <div className="p-6 bg-black/5 dark:bg-white/5 mx-6 mt-6 rounded-[2rem]">
+                 <p className="text-[10px] font-black uppercase opacity-30 mb-4 tracking-widest">Select Version</p>
                  <div className="flex gap-2">
                    {bibles.map(b => (
-                     <button key={b.id} onClick={() => setSelectedBible(b.id)} className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${selectedBible === b.id ? 'bg-primary-500 text-white' : 'bg-white dark:bg-stone-800 opacity-60'}`}>
+                     <button key={b.id} onClick={() => setSelectedBible(b.id)} className={`flex-1 py-3 rounded-2xl text-xs font-black transition-all ${selectedBible === b.id ? 'bg-primary-500 text-white' : 'bg-white dark:bg-stone-800 opacity-60'}`}>
                        {b.abbreviation}
                      </button>
                    ))}
@@ -263,7 +275,7 @@ export default function BibleReader() {
                    <input className="w-full bg-black/5 dark:bg-white/5 rounded-2xl py-4 pl-12 pr-4 outline-none text-sm font-bold" placeholder="Search keywords..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
                  </div>
 
-                 <div className="flex-1 overflow-y-auto space-y-1 pr-2">
+                 <div className="flex-1 overflow-y-auto space-y-1 pr-2 custom-scroll">
                    {books.map(b => (
                      <button key={b.id} onClick={() => setSelectedBook(b.id)} className={`w-full text-left p-4 rounded-xl text-sm font-bold transition-all ${selectedBook === b.id ? 'bg-primary-500/10 text-primary-500' : 'hover:bg-black/5 opacity-70'}`}>
                        {b.name}
@@ -282,9 +294,9 @@ export default function BibleReader() {
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/40 z-50" />
             <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-900 z-50 rounded-t-[3rem] p-10 space-y-10">
-              <div className="flex items-center justify-between"><h2 className="text-2xl font-black uppercase tracking-tighter">Appearance</h2><Button variant="ghost" onClick={() => setShowSettings(false)}><X /></Button></div>
+              <div className="flex items-center justify-between"><h2 className="text-2xl font-black uppercase tracking-tighter text-stone-400">Appearance</h2><Button variant="ghost" onClick={() => setShowSettings(false)}><X /></Button></div>
               <div className="space-y-6">
-                <p className="text-xs font-black uppercase opacity-30 flex items-center gap-3"><Palette className="w-4 h-4" /> Theme</p>
+                <p className="text-xs font-black uppercase opacity-30 flex items-center gap-3 tracking-widest"><Palette className="w-4 h-4" /> Visual Theme</p>
                 <div className="grid grid-cols-4 gap-4">
                   {THEMES.map(t => (
                     <button key={t.id} onClick={() => setTheme(t.id)} className={`flex flex-col items-center gap-3 p-4 rounded-3xl border-2 ${theme === t.id ? 'border-primary-500 bg-primary-500/5' : 'border-transparent bg-black/5 opacity-60'}`}>
@@ -294,14 +306,14 @@ export default function BibleReader() {
                 </div>
               </div>
               <div className="space-y-6">
-                <p className="text-xs font-black uppercase opacity-30 flex items-center gap-3"><Type className="w-4 h-4" /> Text Size</p>
+                <p className="text-xs font-black uppercase opacity-30 flex items-center gap-3 tracking-widest"><Type className="w-4 h-4" /> Font Size</p>
                 <div className="flex items-center justify-between bg-black/5 p-3 rounded-[2rem]">
                   <Button variant="ghost" className="w-14 h-14 rounded-full" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx > 0) setFontSize(FONT_SIZES[idx-1].id); }}><ZoomOut /></Button>
                   <span className="text-sm font-black uppercase tracking-widest">{currentFontSize.label}</span>
                   <Button variant="ghost" className="w-14 h-14 rounded-full" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id); }}><ZoomIn /></Button>
                 </div>
               </div>
-              <Button className="w-full h-16 text-sm font-black uppercase tracking-[0.3em] rounded-3xl" onClick={() => setShowSettings(false)}>Apply Changes</Button>
+              <Button className="w-full h-16 text-sm font-black uppercase tracking-[0.3em] rounded-3xl" onClick={() => setShowSettings(false)}>Apply Reading View</Button>
             </motion.div>
           </>
         )}
@@ -328,6 +340,8 @@ export default function BibleReader() {
         .bible-content .s { display: block; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; margin: 3rem 0 1rem; font-size: 0.8em; opacity: 0.4; }
         .bible-content [data-verse-id] { cursor: pointer; border-radius: 4px; padding: 2px; transition: all 0.2s; }
         .bible-content [data-verse-id]:hover { background: rgba(59, 130, 246, 0.1); }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
       `}} />
     </div>
   );
