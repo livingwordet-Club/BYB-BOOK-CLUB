@@ -735,13 +735,16 @@ const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 // 1. Get Bible Versions
 
 app.get("/api/bible/versions", authenticateToken, async (req, res) => {
-
   try {
-
     const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
-
-      headers: { 'api-key': BIBLE_API_KEY }
-
+      headers: { "api-key": BIBLE_API_KEY }
     });
 
-    // API.Bible wraps everything in a .data property
+    // API.Bible wraps results inside response.data.data
+    res.json(response.data.data);
+
+  } catch (error) {
+    console.error("Bible API Error:", error);
+    res.status(500).json({ error: "Failed to fetch Bible versions" });
+  }
+});
