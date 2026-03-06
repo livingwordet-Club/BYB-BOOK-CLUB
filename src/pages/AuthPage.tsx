@@ -147,15 +147,7 @@ export default function AuthPage() {
                     {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
                   </button>
                 )}
-                <button 
-                  onClick={() => {
-                    setIsReset(!isReset);
-                    setIsLogin(true);
-                  }}
-                  className="text-sm text-primary-600 hover:underline block w-full dark:text-primary-400"
-                >
-                  {isReset ? "Back to Login" : "Forgot Password?"}
-                </button>
+        
               </div>
             </motion.div>
           </AnimatePresence>
