@@ -1,377 +1,747 @@
 import express from "express";
+
 import { createServer as createViteServer } from "vite";
+
 import path from "path";
+
 import { fileURLToPath } from 'url';
+
 import pkg from 'pg';
+
 const { Pool } = pkg;
+
 import bcrypt from "bcryptjs";
+
 import jwt from "jsonwebtoken";
+
 import axios from "axios";
+
 import multer from "multer";
+
 import fs from "fs";
 
-// --- GLOBAL CONFIGURATION ---
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
-const BIBLE_API_KEY = process.env.BIBLE_API_KEY; 
 
-// --- DIRECTORY SETUP ---
+
+const __filename = fileURLToPath(import.meta.url);
+
+const __dirname = path.dirname(__filename);
+
+const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
+
+const BIBLE_API_KEY = process.env.BIBLE_API_KEY; // American Bible Society API Key
+
+
+
+// --- PRE-START: Folder Management ---
+
 const rootDir = path.join(__dirname, "..");
+
 const uploadDir = path.join(rootDir, "uploads");
 
+
+
 if (!fs.existsSync(uploadDir)) {
-    console.log("Creating uploads directory at:", uploadDir);
+
     fs.mkdirSync(uploadDir, { recursive: true });
+
 }
 
-// --- MULTER STORAGE ENGINE ---
+
+
+// --- MULTER CONFIG FOR PROFILE PICS ---
+
 const storage = multer.diskStorage({
+
   destination: (req, file, cb) => {
+
     cb(null, uploadDir);
+
   },
+
   filename: (req: any, file, cb) => {
+
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `profile-${req.user?.id || 'anon'}-${uniqueSuffix}${path.extname(file.originalname)}`);
+
+    cb(null, `profile-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
+
   }
+
 });
+
+
 
 const upload = multer({ 
+
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, 
+
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+
   fileFilter: (req, file, cb) => {
+
     if (file.mimetype.startsWith("image/")) {
+
       cb(null, true);
+
     } else {
+
       cb(new Error("Only images are allowed") as any, false);
+
     }
+
   }
+
 });
 
-// --- POSTGRES DATABASE CONNECTION ---
+
+
+// --- SUPABASE CONNECTION ---
+
 const pool = new Pool({
+
   connectionString: process.env.DATABASE_URL,
+
   ssl: { rejectUnauthorized: false }
+
 });
+
+
 
 const app = express();
+
 app.use(express.json());
+
+
+
+// Serve uploaded files statically
+
 app.use("/uploads", express.static(uploadDir));
 
-// --- DATABASE SCHEMA INITIALIZATION ---
+
+
+// --- INITIALIZE TABLES (Postgres Syntax) ---
+
 async function initDb() {
+
   const client = await pool.connect();
+
   try {
-    console.log("Initializing database tables...");
+
     await client.query(`
+
       CREATE TABLE IF NOT EXISTS users (
+
         id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
+
+        username TEXT UNIQUE,
+
+        password TEXT,
+
         name TEXT,
+
         email TEXT,
+
         bio TEXT,
+
         profile_verse TEXT,
+
         profile_pic TEXT,
+
+        youtube_playlist TEXT,
+
         is_admin INTEGER DEFAULT 0,
+
+        reset_token TEXT,
+
+        reset_token_expiry TIMESTAMP,
+
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
       );
 
-      CREATE TABLE IF NOT EXISTS highlights (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        verse_ref TEXT NOT NULL,
-        content TEXT,
-        color TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
 
-      CREATE TABLE IF NOT EXISTS prayers (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        verse_ref TEXT,
-        note TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
 
       CREATE TABLE IF NOT EXISTS books (
+
         id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
+
+        title TEXT,
+
         author TEXT,
+
         cover_url TEXT,
+
         content TEXT,
+
         is_trending INTEGER DEFAULT 0,
+
         is_new INTEGER DEFAULT 0,
+
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
       );
 
-      CREATE TABLE IF NOT EXISTS reading_progress (
-        id SERIAL PRIMARY KEY,
+
+
+      CREATE TABLE IF NOT EXISTS user_reads (
+
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
         book_id INTEGER REFERENCES books(id) ON DELETE CASCADE,
-        last_chapter TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+        last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+        PRIMARY KEY (user_id, book_id)
+
       );
+
+
+
+      CREATE TABLE IF NOT EXISTS messages (
+
+        id SERIAL PRIMARY KEY,
+
+        sender_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+        receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+        content TEXT,
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+      );
+
+
+
+      CREATE TABLE IF NOT EXISTS friends (
+
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+        friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+        status TEXT DEFAULT 'pending',
+
+        PRIMARY KEY (user_id, friend_id)
+
+      );
+
+
+
+      CREATE TABLE IF NOT EXISTS user_activity (
+
+        id SERIAL PRIMARY KEY,
+
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+        type TEXT,
+
+        content TEXT,
+
+        metadata JSONB,
+
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+      );
+
     `);
-    console.log("Database successfully initialized.");
-  } catch (err) {
-    console.error("Error during database initialization:", err);
+
+
+
+    // Create Admin if not exists
+
+    const adminCheck = await client.query("SELECT * FROM users WHERE username = $1", ["bybmkcadmin"]);
+
+    if (adminCheck.rows.length === 0) {
+
+      const hashedPassword = bcrypt.hashSync("@2026bybMKC", 10);
+
+      await client.query(
+
+        "INSERT INTO users (username, password, name, is_admin) VALUES ($1, $2, $3, $4)",
+
+        ["bybmkcadmin", hashedPassword, "BYB MKC Admin", 1]
+
+      );
+
+    }
+
+    console.log("Connected to Supabase (PostgreSQL) successfully!");
+
   } finally {
+
     client.release();
+
   }
+
 }
 
-// --- AUTHENTICATION MIDDLEWARE ---
-const authenticateToken = (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ error: "Access denied. No token provided." });
-  }
 
-  jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
-    if (err) {
-      return res.status(403).json({ error: "Invalid or expired token." });
+
+// --- AUTH MIDDLEWARE ---
+
+const authenticateToken = (req: any, res: any, next: any) => {
+
+  const authHeader = req.headers['authorization'];
+
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: "No token" });
+
+
+
+  jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
+
+    if (err) return res.status(403).json({ error: "Invalid token" });
+
+    try {
+
+      const userRes = await pool.query("SELECT id, is_admin FROM users WHERE id = $1", [decoded.id]);
+
+      if (userRes.rows.length === 0) return res.status(401).json({ error: "User no longer exists" });
+
+      req.user = { ...decoded, isAdmin: userRes.rows[0].is_admin === 1 };
+
+      next();
+
+    } catch (dbErr) {
+
+      res.status(500).json({ error: "Auth database error" });
+
     }
-    req.user = decoded;
-    next();
+
   });
+
 };
 
-// --- API ROUTES: AUTHENTICATION ---
+
+
+// --- ROUTES ---
+
+
+
+// Auth Routes
+
 app.post("/api/auth/register", async (req, res) => {
+
   const { username, password, email } = req.body;
+
   try {
-    const hashedPassword = bcrypt.hashSync(password, 10);
-    const result = await pool.query(
-      "INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id, username", 
-      [username, hashedPassword, email]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (e: any) {
-    res.status(400).json({ error: "Registration failed. User may already exist." });
-  }
+
+    const hash = bcrypt.hashSync(password, 10);
+
+    const result = await pool.query("INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id", [username, hash, email]);
+
+    res.json({ id: result.rows[0].id });
+
+  } catch (e) { res.status(400).json({ error: "User already exists" }); }
+
 });
+
+
 
 app.post("/api/auth/login", async (req, res) => {
+
   const { username, password } = req.body;
+
+  const userRes = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+
+  const user = userRes.rows[0];
+
+  if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: "Wrong credentials" });
+
+  
+
+  const token = jwt.sign({ id: user.id, username: user.username, isAdmin: user.is_admin === 1 }, JWT_SECRET);
+
+  res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin === 1, name: user.name } });
+
+});
+
+
+
+// FIXED: Password Reset Route (Using pool.query instead of db)
+
+app.post("/api/auth/reset-password-with-code", async (req, res) => {
+
+  const { email, code, newPassword } = req.body;
+
   try {
-    const userRes = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+
+    const userRes = await pool.query("SELECT * FROM users WHERE email = $1 AND reset_token = $2", [email, code]);
+
     const user = userRes.rows[0];
+
     
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: "Invalid username or password" });
+
+    if (!user || new Date(user.reset_token_expiry) < new Date()) {
+
+      return res.status(400).json({ error: "Invalid or expired reset code" });
+
     }
-    
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ 
-      token, 
-      user: { id: user.id, username: user.username, email: user.email } 
-    });
+
+
+
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+
+    await pool.query("UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL WHERE email = $2", [hashedPassword, email]);
+
+
+
+    res.json({ success: true });
+
   } catch (err) {
-    res.status(500).json({ error: "Server error during login" });
+
+    res.status(500).json({ error: "Reset failed" });
+
   }
+
 });
 
-// --- API ROUTES: USER PROFILE & PROGRESS ---
+
+
+// User Profile Routes
+
 app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
-    try {
-        const result = await pool.query("SELECT id, username, email, name, bio, profile_verse, profile_pic FROM users WHERE id = $1", [req.user.id]);
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch profile" });
-    }
+
+  const user = await pool.query("SELECT id, username, name, email, bio, profile_verse, profile_pic, is_admin FROM users WHERE id = $1", [req.user.id]);
+
+  res.json(user.rows[0]);
+
 });
 
-app.post("/api/user/profile", authenticateToken, upload.single('profilePic'), async (req: any, res) => {
-    const { name, bio, profile_verse } = req.body;
-    const profilePic = req.file ? `/uploads/${req.file.filename}` : undefined;
+
+
+app.put("/api/user/profile", authenticateToken, async (req: any, res) => {
+
+  const { name, email, bio, profile_verse, profile_pic } = req.body;
+
+  await pool.query("UPDATE users SET name = $1, email = $2, bio = $3, profile_verse = $4, profile_pic = $5 WHERE id = $6", [name, email, bio, profile_verse, profile_pic, req.user.id]);
+
+  res.json({ success: true });
+
+});
+
+
+
+// Profile Pic Upload (Multer)
+
+app.post("/api/user/upload-avatar", authenticateToken, upload.single("avatar"), async (req: any, res) => {
+
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  const filePath = `/uploads/${req.file.filename}`;
+
+  try {
+
+    await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [filePath, req.user.id]);
+
+    res.json({ success: true, url: filePath });
+
+  } catch (err) {
+
+    res.status(500).json({ error: "Database update failed" });
+
+  }
+
+});
+
+
+
+// Dashboard Route
+
+app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
+
+  try {
+
+    // 1. Fetch Trending Books
+
+    const trending = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
+
     
-    try {
-        if (profilePic) {
-            await pool.query(
-                "UPDATE users SET name = $1, bio = $2, profile_verse = $3, profile_pic = $4 WHERE id = $5",
-                [name, bio, profile_verse, profilePic, req.user.id]
-            );
-        } else {
-            await pool.query(
-                "UPDATE users SET name = $1, bio = $2, profile_verse = $3 WHERE id = $4",
-                [name, bio, profile_verse, req.user.id]
-            );
-        }
-        res.json({ message: "Profile updated successfully" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update profile" });
-    }
-});
 
-app.get("/api/user/progress", authenticateToken, async (req: any, res) => {
-    try {
-        const result = await pool.query(
-            "SELECT rp.*, b.title as book_title FROM reading_progress rp JOIN books b ON rp.book_id = b.id WHERE rp.user_id = $1 ORDER BY updated_at DESC", 
-            [req.user.id]
-        );
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch progress" });
-    }
-});
+    // 2. Fetch New Updates
 
-app.post("/api/user/progress", authenticateToken, async (req: any, res) => {
-    const { bookId, lastChapter } = req.body;
-    try {
-        await pool.query(
-            "INSERT INTO reading_progress (user_id, book_id, last_chapter) VALUES ($1, $2, $3) ON CONFLICT (user_id, book_id) DO UPDATE SET last_chapter = $3, updated_at = CURRENT_TIMESTAMP",
-            [req.user.id, bookId, lastChapter]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update progress" });
-    }
-});
+    const updates = await pool.query("SELECT * FROM books WHERE is_new = 1 ORDER BY created_at DESC LIMIT 5");
 
-// --- API ROUTES: BIBLE FEATURES ---
-app.get('/api/user/bible-data', authenticateToken, async (req: any, res) => {
-  try {
-    const highlights = await pool.query("SELECT * FROM highlights WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
-    const prayers = await pool.query("SELECT * FROM prayers WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
-    res.json({ highlights: highlights.rows, prayers: prayers.rows });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch user bible data" });
-  }
-});
+    
 
-app.post('/api/highlights', authenticateToken, async (req: any, res) => {
-  const { verseRef, content, color } = req.body;
-  try {
-    const result = await pool.query(
-      "INSERT INTO highlights (user_id, verse_ref, content, color) VALUES ($1, $2, $3, $4) RETURNING *",
-      [req.user.id, verseRef, content, color]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to save highlight" });
-  }
-});
+    // 3. Fetch Current User Reading
 
-app.post('/api/prayers', authenticateToken, async (req: any, res) => {
-  const { verseRef, note } = req.body;
-  try {
-    const result = await pool.query(
-      "INSERT INTO prayers (user_id, verse_ref, note) VALUES ($1, $2, $3) RETURNING *",
-      [req.user.id, verseRef, note]
-    );
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to save prayer" });
-  }
-});
+    const currentRead = await pool.query(`
 
-// --- API ROUTES: EXTERNAL BIBLE API PROXY ---
-const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
+      SELECT b.* FROM books b 
 
-app.get("/api/bible/versions", authenticateToken, async (req, res) => {
-  try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, { 
-        headers: { 'api-key': BIBLE_API_KEY } 
+      JOIN user_reads ur ON b.id = ur.book_id 
+
+      WHERE ur.user_id = $1 
+
+      ORDER BY ur.last_read_at DESC LIMIT 1
+
+    `, [req.user.id]);
+
+    
+
+    // 4. Fetch Friend Suggestions
+
+    const suggestions = await pool.query(`
+
+      SELECT id, username, name, profile_pic FROM users 
+
+      WHERE id != $1 AND id NOT IN (SELECT friend_id FROM friends WHERE user_id = $1) 
+
+      LIMIT 5
+
+    `, [req.user.id]);
+
+    
+
+    // 5. Fetch Recent Messages
+
+    const recentMessages = await pool.query(`
+
+      SELECT m.*, u.username as sender_name, u.profile_pic as sender_pic 
+
+      FROM messages m
+
+      JOIN users u ON m.sender_id = u.id
+
+      WHERE m.receiver_id = $1
+
+      ORDER BY m.created_at DESC LIMIT 5
+
+    `, [req.user.id]);
+
+
+
+    // 6. Fetch User Activities (The specific part you gave me)
+
+    const activities = await pool.query(`
+
+      SELECT * FROM user_activity 
+
+      WHERE user_id = $1 
+
+      ORDER BY created_at DESC LIMIT 10
+
+    `, [req.user.id]);
+
+
+
+    // Send unified response using .rows (Postgres returns data in a 'rows' array)
+
+    res.json({ 
+
+      trending: trending.rows, 
+
+      updates: updates.rows, 
+
+      currentRead: currentRead.rows[0] || null, 
+
+      suggestions: suggestions.rows,
+
+      recentMessages: recentMessages.rows,
+
+      activities: activities.rows 
+
     });
-    res.json(response.data.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch Bible versions" });
+
+
+
+  } catch (err) { 
+
+    console.error("Dashboard Error:", err);
+
+    res.status(500).json({ error: "Dashboard data fetch failed" }); 
+
   }
+
 });
 
-app.get("/api/bible/:bibleId/books", authenticateToken, async (req, res) => {
+// Books Routes
+
+app.get("/api/books", authenticateToken, async (req, res) => {
+
+  const books = await pool.query("SELECT * FROM books");
+
+  res.json(books.rows);
+
+});
+
+
+
+app.post("/api/books", authenticateToken, async (req: any, res) => {
+
+    if (!req.user.isAdmin) return res.sendStatus(403);
+
+    const { title, author, cover_url, content, is_trending, is_new } = req.body;
+
+    await pool.query("INSERT INTO books (title, author, cover_url, content, is_trending, is_new) VALUES ($1, $2, $3, $4, $5, $6)", [title, author, cover_url, content, is_trending ? 1 : 0, is_new ? 1 : 0]);
+
+    res.json({ success: true });
+
+});
+
+
+
+// Messages Routes
+
+app.get("/api/messages", authenticateToken, async (req: any, res) => {
+
+  const msg = await pool.query("SELECT m.*, u.username as sender_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE receiver_id = $1 OR sender_id = $1 ORDER BY created_at ASC", [req.user.id]);
+
+  res.json(msg.rows);
+
+});
+
+
+
+app.post("/api/messages", authenticateToken, async (req: any, res) => {
+
+  const { receiver_id, content } = req.body;
+
+  await pool.query("INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3)", [req.user.id, receiver_id, content]);
+
+  res.json({ success: true });
+
+});
+
+
+
+// Activity Routes
+
+app.get("/api/activity", authenticateToken, async (req: any, res) => {
+
+    const activity = await pool.query("SELECT * FROM user_activity WHERE user_id = $1 ORDER BY created_at DESC", [req.user.id]);
+
+    res.json(activity.rows);
+
+});
+
+
+
+app.post("/api/activity", authenticateToken, async (req: any, res) => {
+
+    const { type, content, metadata } = req.body;
+
+    await pool.query("INSERT INTO user_activity (user_id, type, content, metadata) VALUES ($1, $2, $3, $4)", [req.user.id, type, content, JSON.stringify(metadata)]);
+
+    res.json({ success: true });
+
+});
+
+
+
+// Admin Stats Route
+
+app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
+
+    if (!req.user.isAdmin) return res.sendStatus(403);
+
+    const userCount = await pool.query("SELECT COUNT(*) FROM users");
+
+    const bookCount = await pool.query("SELECT COUNT(*) FROM books");
+
+    const recentActivity = await pool.query("SELECT ua.*, u.username FROM user_activity ua JOIN users u ON ua.user_id = u.id ORDER BY created_at DESC LIMIT 20");
+
+    const allUsers = await pool.query("SELECT id, username, name, email, is_admin FROM users");
+
+    res.json({ userCount: userCount.rows[0].count, bookCount: bookCount.rows[0].count, recentActivity: recentActivity.rows, allUsers: allUsers.rows });
+
+});
+
+
+
+// Audiobooks (External API)
+
+app.get("/api/audiobooks", authenticateToken, async (req, res) => {
+
   try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books`, { 
-        headers: { 'api-key': BIBLE_API_KEY } 
+
+    const response = await axios.get("https://librivox.org/api/feed/audiobooks", {
+
+      params: { format: "json", limit: 50, genre: "Christianity" },
+
+      timeout: 10000
+
     });
-    res.json(response.data.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch books" });
-  }
+
+    res.json(response.data.books || []);
+
+  } catch (error) { res.json([]); }
+
 });
 
-app.get("/api/bible/:bibleId/books/:bookId/chapters", authenticateToken, async (req, res) => {
+
+
+// Account Management
+
+app.delete("/api/user/delete", authenticateToken, async (req: any, res) => {
+
   try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books/${req.params.bookId}/chapters`, { 
-        headers: { 'api-key': BIBLE_API_KEY } 
-    });
-    res.json(response.data.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch chapters" });
-  }
+
+    await pool.query("DELETE FROM users WHERE id = $1", [req.user.id]);
+
+    res.json({ success: true });
+
+  } catch (error) { res.status(500).json({ error: "Failed to delete account" }); }
+
 });
 
-app.get("/api/bible/:bibleId/chapters/:chapterId", authenticateToken, async (req, res) => {
-  try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}`, {
-        headers: { 'api-key': BIBLE_API_KEY },
-        params: { 'content-type': 'html', 'include-verse-numbers': true }
-    });
-    res.json(response.data.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch scripture content" });
-  }
-});
 
-// --- API ROUTES: BOOK CLUB ---
-app.get("/api/books", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM books ORDER BY created_at DESC");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch books" });
-    }
-});
 
-app.get("/api/books/trending", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT * FROM books WHERE is_trending = 1 LIMIT 5");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch trending books" });
-    }
-});
+// --- SERVER START ---
 
-// --- SERVER LIFECYCLE ---
 async function startServer() {
+
   await initDb();
 
   if (process.env.NODE_ENV !== "production") {
-    console.log("Starting in Development mode...");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa"
-    });
+
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+
     app.use(vite.middlewares);
+
   } else {
-    console.log("Starting in Production mode...");
+
     const distPath = path.join(rootDir, "dist");
-    
-    if (fs.existsSync(distPath)) {
-        app.use(express.static(distPath));
-        app.get("*", (req, res) => {
-            res.sendFile(path.join(distPath, "index.html"));
-        });
-    } else {
-        console.warn("Dist folder not found!");
-    }
+
+    app.use(express.static(distPath));
+
+    app.get("*", (req, res) => {
+
+      if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
+
+      res.sendFile(path.join(distPath, "index.html"));
+
+    });
+
   }
 
   const PORT = process.env.PORT || 3000;
+
   app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`BYB Book Club Server is live at http://localhost:${PORT}`);
+
+    console.log(`Server live on port ${PORT}`);
+
   });
+
 }
 
-// Global Error Handler
-app.use((err: any, req: any, res: any, next: any) => {
-    console.error("Unhandled Server Error:", err.stack);
-    res.status(500).json({ error: "Internal Server Error", details: err.message });
-});
+// --- BIBLE API PROXY ROUTES ---
 
-startServer().catch(err => {
-    console.error("Failed to start server process:", err);
-});
+const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
+
+
+
+// 1. Get Bible Versions
+
+app.get("/api/bible/versions", authenticateToken, async (req, res) => {
+
+  try {
+
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
+
+      headers: { 'api-key': BIBLE_API_KEY }
+
+    });
+
+    // API.Bible wraps everything in a .data property
