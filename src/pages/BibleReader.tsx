@@ -8,11 +8,11 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
-import { APP_SLOGAN } from '../constants/appConfig';
 
-// --- CONFIG ---
+// --- CONFIG (Moved inside to prevent build errors) ---
 const API_KEY = 'JT9CAQaoRjmSgdBxcT4tG';
 const BASE_URL = 'https://rest.api.bible/v1'; 
+const APP_SLOGAN = "The Word is Living and Active";
 
 const HIGHLIGHT_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', 
