@@ -6,7 +6,7 @@ import {
   Bookmark, StickyNote, Heart, Search, Type, Palette, 
   ZoomIn, ZoomOut, X, Menu, Share2, Headphones, Loader2, 
   AlertCircle, Key, Globe, Zap, Quote, PenTool, MessageSquare,
-  BookOpen, Trash2, Calendar, Send, Save
+  BookOpen, Trash2, Calendar, Send, Save, Check
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +32,7 @@ const FONT_SIZES = [
 export default function BibleReader() {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const contentRef = useRef<HTMLDivElement>(null);
   
   // Data State
   const [bibles, setBibles] = useState<any[]>([]);
@@ -49,9 +50,10 @@ export default function BibleReader() {
   const [quotes, setQuotes] = useState<any[]>(() => JSON.parse(localStorage.getItem('lv_quotes') || '[]'));
   const [prayers, setPrayers] = useState<any[]>(() => JSON.parse(localStorage.getItem('lv_prayers') || '[]'));
 
-  // Modal State
+  // Modal & Selection State
   const [activeModal, setActiveModal] = useState<'prayer' | 'quote' | null>(null);
   const [modalInput, setModalInput] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
   // UI State
   const [loading, setLoading] = useState(false);
@@ -80,15 +82,19 @@ export default function BibleReader() {
     } catch (err: any) { throw err; }
   };
 
-  // Initial Loads
+  // Initial Loads - FILTERED FOR ENGLISH AND AMHARIC
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       try {
         const bibleData = await fetchWithKey('/bibles');
         if (bibleData.data) {
-          setBibles(bibleData.data);
-          setSelectedBible(bibleData.data[0].id);
+          // Filter only English (eng) and Amharic (amh)
+          const filtered = bibleData.data.filter((b: any) => 
+            b.language.id === 'eng' || b.language.id === 'amh'
+          );
+          setBibles(filtered);
+          if (filtered.length > 0) setSelectedBible(filtered[0].id);
         }
       } catch (err: any) { setGlobalError(err.message); }
       finally { setLoading(false); }
@@ -135,10 +141,15 @@ export default function BibleReader() {
     }
   }, [selectedBible, selectedChapter, view]);
 
-  // Handle Saves
+  // Logic: Get Selected Text
+  const getSelectionInfo = () => {
+    const selection = window.getSelection();
+    return selection ? selection.toString().trim() : '';
+  };
+
+  // Actions
   const handleSaveEntry = () => {
     if (!modalInput.trim()) return;
-
     const newEntry = {
       id: Date.now(),
       ref: `${books.find(b => b.id === selectedBook)?.name} ${selectedChapter.split('.').pop()}`,
@@ -147,24 +158,39 @@ export default function BibleReader() {
       date: new Date().toLocaleDateString(),
       text: modalInput
     };
-
     if (activeModal === 'prayer') setPrayers([newEntry, ...prayers]);
     if (activeModal === 'quote') setQuotes([newEntry, ...quotes]);
-
     setModalInput('');
     setActiveModal(null);
   };
 
   const handleQuickAdd = (type: 'bookmark' | 'highlight') => {
+    const selectedText = getSelectionInfo();
+    
+    // Only add if text is selected OR if it's a bookmark (which can be for the whole chapter)
+    if (type === 'highlight' && !selectedText) {
+      alert("Please select a verse text first to highlight it.");
+      return;
+    }
+
     const newEntry = {
       id: Date.now(),
       ref: `${books.find(b => b.id === selectedBook)?.name} ${selectedChapter.split('.').pop()}`,
       bibleId: selectedBible,
       chapterId: selectedChapter,
-      date: new Date().toLocaleDateString()
+      date: new Date().toLocaleDateString(),
+      text: selectedText || "Chapter Bookmark"
     };
+
     if (type === 'bookmark') setBookmarks([newEntry, ...bookmarks]);
     if (type === 'highlight') setHighlights([newEntry, ...highlights]);
+  };
+
+  const handleShare = (item: any) => {
+    const shareText = `"${item.text}"\n\n— ${item.ref} (${item.date})\nShared via Living Word`;
+    navigator.clipboard.writeText(shareText);
+    setCopiedId(item.id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const removeEntry = (type: string, id: number) => {
@@ -178,13 +204,13 @@ export default function BibleReader() {
   const currentFontSize = FONT_SIZES.find(f => f.id === fontSize) || FONT_SIZES[1];
 
   return (
-    <div className={`min-h-screen flex flex-col ${currentTheme.bg} ${currentTheme.text} transition-colors duration-500`}>
+    <div className={`fixed inset-0 flex flex-col ${currentTheme.bg} ${currentTheme.text} transition-colors duration-500 overflow-hidden`}>
       {/* HEADER */}
-      <header className="sticky top-0 z-40 backdrop-blur-md bg-opacity-80 border-b border-black/5 flex items-center justify-between px-6 h-20">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => setShowNav(true)} className="rounded-full"><Menu /></Button>
-          <div className="flex flex-col">
-            <h1 className="text-sm font-black uppercase tracking-widest leading-none mb-1">
+      <header className="flex-none z-40 backdrop-blur-md bg-opacity-80 border-b border-black/5 flex items-center justify-between px-6 h-20">
+        <div className="flex items-center gap-4 max-w-xs">
+          <Button variant="ghost" onClick={() => setShowNav(true)} className="rounded-full flex-shrink-0"><Menu /></Button>
+          <div className="flex flex-col truncate">
+            <h1 className="text-sm font-black uppercase tracking-widest leading-none mb-1 truncate">
               {view === 'reader' ? (books.find(b => b.id === selectedBook)?.name || 'Library') : 'Journal'}
             </h1>
             <div className="flex items-center gap-2">
@@ -204,84 +230,99 @@ export default function BibleReader() {
         </div>
       </header>
 
-      {/* DASHBOARD CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-8 pt-8 max-w-5xl mx-auto w-full">
-        <button onClick={() => handleQuickAdd('bookmark')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
-            <Bookmark className="text-blue-500 mb-2" size={24} />
-            <span className="text-2xl font-black">{bookmarks.length}</span>
-            <span className="text-[10px] font-bold opacity-40 uppercase">Bookmarks</span>
-        </button>
-        <button onClick={() => setActiveModal('quote')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
-            <Quote className="text-purple-500 mb-2" size={24} />
-            <span className="text-2xl font-black">{quotes.length}</span>
-            <span className="text-[10px] font-bold opacity-40 uppercase">Quote it</span>
-        </button>
-        <button onClick={() => handleQuickAdd('highlight')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
-            <PenTool className="text-amber-500 mb-2" size={24} />
-            <span className="text-2xl font-black">{highlights.length}</span>
-            <span className="text-[10px] font-bold opacity-40 uppercase">Highlights</span>
-        </button>
-        <button onClick={() => setActiveModal('prayer')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
-            <Heart className="text-red-500 mb-2" size={24} />
-            <span className="text-2xl font-black">{prayers.length}</span>
-            <span className="text-[10px] font-bold opacity-40 uppercase">Pray</span>
-        </button>
-      </div>
+      {/* SCROLLABLE CONTENT AREA */}
+      <div className="flex-1 overflow-y-auto custom-scroll flex flex-col items-center">
+        <div className="w-full max-w-4xl px-6 md:px-12">
+          {/* DASHBOARD CARDS */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 w-full">
+            <button onClick={() => handleQuickAdd('bookmark')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
+                <Bookmark className="text-blue-500 mb-2" size={24} />
+                <span className="text-2xl font-black">{bookmarks.length}</span>
+                <span className="text-[10px] font-bold opacity-40 uppercase">Bookmarks</span>
+            </button>
+            <button onClick={() => {
+              const txt = getSelectionInfo();
+              setModalInput(txt);
+              setActiveModal('quote');
+            }} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
+                <Quote className="text-purple-500 mb-2" size={24} />
+                <span className="text-2xl font-black">{quotes.length}</span>
+                <span className="text-[10px] font-bold opacity-40 uppercase">Quote it</span>
+            </button>
+            <button onClick={() => handleQuickAdd('highlight')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
+                <PenTool className="text-amber-500 mb-2" size={24} />
+                <span className="text-2xl font-black">{highlights.length}</span>
+                <span className="text-[10px] font-bold opacity-40 uppercase">Highlights</span>
+            </button>
+            <button onClick={() => setActiveModal('prayer')} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col items-center group active:scale-95 transition-all">
+                <Heart className="text-red-500 mb-2" size={24} />
+                <span className="text-2xl font-black">{prayers.length}</span>
+                <span className="text-[10px] font-bold opacity-40 uppercase">Pray</span>
+            </button>
+          </div>
 
-      {/* MAIN VIEW */}
-      <main className="flex-1 max-w-3xl mx-auto w-full px-8 py-12">
-        <AnimatePresence mode="wait">
-          {view === 'reader' ? (
-            <motion.div key="reader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {loading ? (
-                <div className="flex flex-col items-center justify-center py-32 gap-4">
-                  <Loader2 className="animate-spin text-primary-500" />
-                  <p className="text-[10px] font-black uppercase opacity-30">Opening Manuscripts</p>
-                </div>
+          {/* MAIN CONTENT CONTAINER */}
+          <main className="py-12 pb-32">
+            <AnimatePresence mode="wait">
+              {view === 'reader' ? (
+                <motion.div key="reader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  {loading ? (
+                    <div className="flex flex-col items-center justify-center py-32 gap-4">
+                      <Loader2 className="animate-spin text-primary-500" />
+                      <p className="text-[10px] font-black uppercase opacity-30">Opening Manuscripts</p>
+                    </div>
+                  ) : (
+                    <div 
+                      ref={contentRef}
+                      className={`bible-content ${currentFontSize.size} font-serif leading-relaxed select-text`} 
+                      dangerouslySetInnerHTML={{ __html: content }} 
+                    />
+                  )}
+                </motion.div>
               ) : (
-                <div className={`bible-content ${currentFontSize.size} font-serif leading-relaxed`} dangerouslySetInnerHTML={{ __html: content }} />
-              )}
-            </motion.div>
-          ) : (
-            <motion.div key="journal" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-12">
-              <h2 className="text-4xl font-black uppercase tracking-tighter italic">My Journal</h2>
-              
-              {[
-                { title: 'Recent Bookmarks', data: bookmarks, type: 'bookmarks', color: 'bg-blue-500' },
-                { title: 'Saved Quotes', data: quotes, type: 'quotes', color: 'bg-purple-500' },
-                { title: 'Prayer Petitions', data: prayers, type: 'prayers', color: 'bg-red-500' }
-              ].map((section) => (
-                <div key={section.type} className="space-y-4">
-                   <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30 flex items-center gap-2">
-                     <span className={`w-2 h-2 rounded-full ${section.color}`} /> {section.title}
-                   </p>
-                   {section.data.length === 0 ? (
-                     <div className="p-8 border-2 border-dashed border-black/5 rounded-[2.5rem] text-center opacity-30 text-xs font-bold">No entries yet.</div>
-                   ) : (
-                     <div className="space-y-3">
-                       {section.data.map((item: any) => (
-                         <div key={item.id} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col gap-4 group">
-                           <div className="flex items-center justify-between">
-                             <div className="flex flex-col gap-1">
-                               <span className="text-sm font-black uppercase">{item.ref}</span>
-                               <span className="text-[10px] font-bold opacity-40">{item.date}</span>
+                <motion.div key="journal" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="space-y-12">
+                  <h2 className="text-4xl font-black uppercase tracking-tighter italic">My Journal</h2>
+                  {[
+                    { title: 'Recent Bookmarks', data: bookmarks, type: 'bookmarks', color: 'bg-blue-500' },
+                    { title: 'Saved Quotes', data: quotes, type: 'quotes', color: 'bg-purple-500' },
+                    { title: 'Prayer Petitions', data: prayers, type: 'prayers', color: 'bg-red-500' }
+                  ].map((section) => (
+                    <div key={section.type} className="space-y-4">
+                       <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-30 flex items-center gap-2">
+                         <span className={`w-2 h-2 rounded-full ${section.color}`} /> {section.title}
+                       </p>
+                       {section.data.length === 0 ? (
+                         <div className="p-8 border-2 border-dashed border-black/5 rounded-[2.5rem] text-center opacity-30 text-xs font-bold">No entries yet.</div>
+                       ) : (
+                         <div className="space-y-3">
+                           {section.data.map((item: any) => (
+                             <div key={item.id} className="bg-black/5 dark:bg-white/5 p-6 rounded-[2rem] flex flex-col gap-4">
+                               <div className="flex items-center justify-between">
+                                 <div className="flex flex-col gap-1">
+                                   <span className="text-sm font-black uppercase">{item.ref}</span>
+                                   <span className="text-[10px] font-bold opacity-40">{item.date}</span>
+                                 </div>
+                                 <div className="flex gap-2">
+                                   <Button variant="ghost" onClick={() => handleShare(item)} className="rounded-full bg-white dark:bg-stone-800 p-2">
+                                     {copiedId === item.id ? <Check size={14} className="text-green-500" /> : <Share2 size={14}/>}
+                                   </Button>
+                                   <Button variant="ghost" onClick={() => { setSelectedBible(item.bibleId); setSelectedChapter(item.chapterId); setView('reader'); }} className="rounded-full bg-white dark:bg-stone-800 p-2"><BookOpen size={14}/></Button>
+                                   <Button variant="ghost" onClick={() => removeEntry(section.type, item.id)} className="rounded-full bg-red-500/10 text-red-500 p-2"><Trash2 size={14}/></Button>
+                                 </div>
+                               </div>
+                               {item.text && <p className="text-sm italic opacity-80 border-l-2 border-black/10 pl-4">{item.text}</p>}
                              </div>
-                             <div className="flex gap-2">
-                               <Button variant="ghost" onClick={() => { setSelectedBible(item.bibleId); setSelectedChapter(item.chapterId); setView('reader'); }} className="rounded-full bg-white dark:bg-stone-800 p-2"><BookOpen size={14}/></Button>
-                               <Button variant="ghost" onClick={() => removeEntry(section.type, item.id)} className="rounded-full bg-red-500/10 text-red-500 p-2"><Trash2 size={14}/></Button>
-                             </div>
-                           </div>
-                           {item.text && <p className="text-sm italic opacity-80 border-l-2 border-black/10 pl-4">{item.text}</p>}
+                           ))}
                          </div>
-                       ))}
-                     </div>
-                   )}
-                </div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+                       )}
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
 
       {/* MODALS */}
       <AnimatePresence>
@@ -296,36 +337,28 @@ export default function BibleReader() {
                         {activeModal === 'prayer' ? <Heart size={24} /> : <Quote size={24} />}
                       </div>
                       <div>
-                        <h2 className="text-xl font-black uppercase tracking-tighter">{activeModal === 'prayer' ? 'Prayer Journal' : 'Save Verse'}</h2>
+                        <h2 className="text-xl font-black uppercase tracking-tighter">{activeModal === 'prayer' ? 'Prayer' : 'Quote'}</h2>
                         <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">{books.find(b => b.id === selectedBook)?.name} {selectedChapter.split('.').pop()}</p>
                       </div>
                     </div>
                     <Button variant="ghost" onClick={() => setActiveModal(null)}><X /></Button>
                  </div>
-                 
                  <textarea 
                    autoFocus
                    value={modalInput}
                    onChange={(e) => setModalInput(e.target.value)}
-                   placeholder={activeModal === 'prayer' ? "Type your prayer here..." : "Paste or type the verse text here..."}
-                   className="w-full h-48 bg-black/5 dark:bg-white/5 rounded-3xl p-6 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/20 resize-none transition-all"
+                   className="w-full h-48 bg-black/5 dark:bg-white/5 rounded-3xl p-6 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-500/20 resize-none"
                  />
-
-                 <div className="flex gap-4">
-                   <Button variant="ghost" onClick={() => setActiveModal(null)} className="flex-1 h-16 rounded-2xl font-black uppercase tracking-widest text-[10px]">Cancel</Button>
-                   <Button onClick={handleSaveEntry} className="flex-2 h-16 rounded-2xl font-black uppercase tracking-widest text-[10px] bg-primary-500 text-white flex items-center gap-2 justify-center px-8">
-                     <Save size={16} /> Save Entry
-                   </Button>
-                 </div>
+                 <Button onClick={handleSaveEntry} className="w-full h-16 rounded-2xl font-black uppercase tracking-widest text-[10px] bg-primary-500 text-white">Save Entry</Button>
                </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* FOOTER */}
+      {/* FOOTER - FIXED AT BOTTOM */}
       {view === 'reader' && (
-        <footer className="h-24 border-t border-black/5 flex items-center justify-around px-8 sticky bottom-0 bg-inherit">
+        <footer className="flex-none h-24 border-t border-black/5 flex items-center justify-around px-8 bg-inherit z-40">
            <Button variant="ghost" onClick={() => {
              const i = chapters.findIndex(c => c.id === selectedChapter);
              if (i > 0) setSelectedChapter(chapters[i-1].id);
@@ -340,43 +373,47 @@ export default function BibleReader() {
         </footer>
       )}
 
-      {/* SETTINGS DRAWER */}
+      {/* DRAWERS (Settings/Nav) - Similar logic but with fixed positioning */}
       <AnimatePresence>
         {showSettings && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/40 z-50" />
-            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-900 z-50 rounded-t-[3.5rem] p-10 space-y-12">
-              <div className="flex items-center justify-between"><h2 className="text-2xl font-black uppercase tracking-tighter">Appearance</h2><Button variant="ghost" onClick={() => setShowSettings(false)}><X /></Button></div>
-              <div className="grid grid-cols-4 gap-4">
-                {THEMES.map(t => (
-                  <button key={t.id} onClick={() => setTheme(t.id)} className={`flex flex-col items-center gap-3 p-4 rounded-3xl border-2 ${theme === t.id ? 'border-primary-500 bg-primary-500/5' : 'border-transparent bg-black/5 opacity-60'}`}>
-                    <div className={`w-12 h-12 rounded-full ${t.bg} border-2 border-black/10`} />
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center justify-between bg-black/5 p-4 rounded-[2.5rem]">
-                <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx > 0) setFontSize(FONT_SIZES[idx-1].id); }}><ZoomOut /></Button>
-                <span className="text-xs font-black uppercase tracking-widest">{currentFontSize.label}</span>
-                <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id); }}><ZoomIn /></Button>
-              </div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSettings(false)} className="fixed inset-0 bg-black/40 z-[60]" />
+            <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} className="fixed bottom-0 inset-x-0 bg-white dark:bg-stone-900 z-[70] rounded-t-[3.5rem] p-10 space-y-12">
+               <div className="flex items-center justify-between"><h2 className="text-2xl font-black uppercase tracking-tighter">View Settings</h2><Button variant="ghost" onClick={() => setShowSettings(false)}><X /></Button></div>
+               <div className="grid grid-cols-4 gap-4">
+                 {THEMES.map(t => (
+                   <button key={t.id} onClick={() => setTheme(t.id)} className={`flex flex-col items-center gap-3 p-4 rounded-3xl border-2 ${theme === t.id ? 'border-primary-500 bg-primary-500/5' : 'border-transparent bg-black/5 opacity-60'}`}>
+                     <div className={`w-12 h-12 rounded-full ${t.bg} border-2 border-black/10`} />
+                   </button>
+                 ))}
+               </div>
+               <div className="flex items-center justify-between bg-black/5 p-4 rounded-[2.5rem]">
+                 <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx > 0) setFontSize(FONT_SIZES[idx-1].id); }}><ZoomOut /></Button>
+                 <span className="text-xs font-black uppercase tracking-widest">{currentFontSize.label}</span>
+                 <Button variant="ghost" onClick={() => { const idx = FONT_SIZES.findIndex(f => f.id === fontSize); if (idx < FONT_SIZES.length - 1) setFontSize(FONT_SIZES[idx+1].id); }}><ZoomIn /></Button>
+               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* NAV DRAWER */}
       <AnimatePresence>
         {showNav && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNav(false)} className="fixed inset-0 bg-black/60 z-50" />
-            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} className="fixed inset-y-0 left-0 w-full max-w-md bg-white dark:bg-[#0c0c0c] z-50 flex flex-col shadow-2xl">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowNav(false)} className="fixed inset-0 bg-black/60 z-[60]" />
+            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} className="fixed inset-y-0 left-0 w-full max-w-md bg-white dark:bg-[#0c0c0c] z-[70] flex flex-col shadow-2xl">
                <div className="p-8 border-b border-black/5 flex justify-between items-center">
-                 <h2 className="font-black uppercase tracking-tighter text-2xl italic">Holy Bible</h2>
+                 <h2 className="font-black uppercase tracking-tighter text-2xl italic">The Word</h2>
                  <Button variant="ghost" onClick={() => setShowNav(false)}><X /></Button>
+               </div>
+               <div className="p-4 bg-black/5">
+                 <select value={selectedBible} onChange={(e) => setSelectedBible(e.target.value)} className="w-full bg-transparent p-4 text-xs font-black uppercase border-2 border-black/10 rounded-2xl">
+                   {bibles.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                 </select>
                </div>
                <div className="flex-1 overflow-y-auto p-8 space-y-1 custom-scroll">
                  {books.map(b => (
-                   <button key={b.id} onClick={() => { setSelectedBook(b.id); setShowNav(false); setView('reader'); }} className={`w-full text-left p-4 rounded-2xl text-sm font-bold transition-all ${selectedBook === b.id ? 'bg-primary-500/10 text-primary-500' : 'hover:bg-black/5 opacity-60'}`}>
+                   <button key={b.id} onClick={() => { setSelectedBook(b.id); setShowNav(false); }} className={`w-full text-left p-4 rounded-2xl text-sm font-bold transition-all ${selectedBook === b.id ? 'bg-primary-500/10 text-primary-500' : 'hover:bg-black/5 opacity-60'}`}>
                      {b.name}
                    </button>
                  ))}
