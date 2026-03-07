@@ -6,15 +6,16 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  // Inside your export default defineConfig(({mode}) => { ...
   return {
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
-    // Line 13: Added build configuration
+    // ADD THESE 4 LINES:
     build: {
       outDir: 'dist',
-      emptyOutDir: false, // CRITICAL: Prevents Vite from deleting your server.js
+      emptyOutDir: false, 
     },
     resolve: {
       alias: {
