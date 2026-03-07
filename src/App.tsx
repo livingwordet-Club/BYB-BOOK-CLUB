@@ -5,6 +5,7 @@ import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import Library from './pages/Library';
 import Profile from './pages/Profile';
+import ProfileSetup from './pages/ProfileSetup';
 import AdminPanel from './pages/AdminPanel';
 import Messages from './pages/Messages';
 import BibleReader from './pages/BibleReader';
@@ -157,6 +158,13 @@ export default function App() {
             <PrivateRoute>
               <Layout>
                 <Profile />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/profile/setup" element={
+            <PrivateRoute>
+              <Layout>
+                <ProfileSetup />
               </Layout>
             </PrivateRoute>
           } />
