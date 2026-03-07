@@ -5,6 +5,10 @@ interface User {
   username: string;
   isAdmin: boolean;
   name?: string;
+  email?: string;
+  bio?: string;
+  profile_verse?: string;
+  profile_pic?: string;
 }
 
 interface AuthContextType {
@@ -17,13 +21,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// --- Lines 22 to 38 ---
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Line 24: Initialize token immediately using a function to avoid multi-render lag
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
-
-  // Line 27: Initialize user immediately from storage so PrivateRoute sees it on frame 1
   const [user, setUser] = useState<User | null>(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -35,12 +34,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     return null;
   });
-
-  // Line 38: Set to false immediately as the check is now synchronous
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    // Line 41: Keep the sync effect but remove the setIsLoading call
     const storedUser = localStorage.getItem('user');
     if (storedUser && token) {
       try {
@@ -50,8 +46,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [token]);
-
-// --- Remainder of file stays identical ---
 
   const login = (newToken: string, newUser: User) => {
     localStorage.setItem('token', newToken);
