@@ -268,32 +268,32 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
+  // Line 272
   } else {
-    // 1. Get the ROOT folder where 'dist' lives
     const rootPath = process.cwd();
     const distPath = path.join(rootPath, 'dist');
     
-    // 2. LOG THE PATHS (Check your Render logs for these!)
-    console.log("Root Path:", rootPath);
-    console.log("Dist Path:", distPath);
+    // LOG FOR DEBBUGING
+    console.log("Serving from:", distPath);
 
-    // 3. Serve EVERYTHING in the dist folder (including the assets folder)
+    // FIX: Explicitly serve the assets folder first
+    app.use('/assets', express.static(path.join(distPath, 'assets')));
+    
+    // Serve the rest of the dist folder
     app.use(express.static(distPath));
 
-    // 4. Handle SPA routing
     app.get("*", (req, res) => {
-      // API Guard: If it starts with /api, it's not a file
+      // API Guard
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API not found" });
       }
 
-      // File Guard: If the path has a dot (like .js or .css), 
-      // but express.static didn't find it, send a real 404.
+      // File Guard: If it's a missing asset, don't send index.html
       if (req.path.includes('.')) {
-        return res.status(404).send(`File not found: ${req.path}`);
+        return res.status(404).send("Asset not found");
       }
 
-      // 5. Send the index.html for everything else
+      // Send the index.html
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
