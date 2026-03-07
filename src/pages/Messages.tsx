@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Input } from '../components/UI';
 import { Search, Send, User, MessageSquare, ArrowLeft } from 'lucide-react';
@@ -25,6 +26,7 @@ interface Conversation {
 
 export default function Messages() {
   const { token, user } = useAuth();
+  const location = useLocation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeChat, setActiveChat] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,6 +34,23 @@ export default function Messages() {
   const [socket, setSocket] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const selectedUserId = location.state?.selectedUserId;
+    if (selectedUserId) {
+      const fetchUser = async () => {
+        try {
+          const response = await axios.get(`/api/users/${selectedUserId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setActiveChat(response.data);
+        } catch (err) {
+          console.error('Failed to fetch user for chat', err);
+        }
+      };
+      fetchUser();
+    }
+  }, [location.state, token]);
 
   useEffect(() => {
     const newSocket = io(window.location.origin);
