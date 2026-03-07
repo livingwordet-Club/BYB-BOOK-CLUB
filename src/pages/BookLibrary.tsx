@@ -60,14 +60,17 @@ export default function BookLibrary() {
   };
 
   const handleBookSelect = (book: any) => {
-    saveActivity('read', `Started reading ${book.title}`);
-    window.open(book.file_url, '_blank');
+    saveActivity('read', `Started reading ${book?.title}`);
+    if (book?.file_url) {
+      window.open(book.file_url, '_blank');
+    }
   };
 
-  const filteredBooks = books.filter(b => 
-    b.title.toLowerCase().includes(search.toLowerCase()) || 
-    b.author.toLowerCase().includes(search.toLowerCase())
-  );
+  // Line 65: Added optional chaining to prevent crash if books is undefined
+  const filteredBooks = books?.filter(b => 
+    b?.title?.toLowerCase().includes(search.toLowerCase()) || 
+    b?.author?.toLowerCase().includes(search.toLowerCase())
+  ) || [];
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -91,17 +94,18 @@ export default function BookLibrary() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-        {filteredBooks.map(book => (
+        {/* Line 93: Added optional chaining to map */}
+        {filteredBooks?.map(book => (
           <motion.div
-            key={book.id}
+            key={book?.id}
             whileHover={{ y: -10 }}
             onClick={() => handleBookSelect(book)}
             className="cursor-pointer group"
           >
             <div className="relative aspect-[2/3] rounded-2xl overflow-hidden shadow-lg mb-3">
               <img 
-                src={book.cover_url || 'https://picsum.photos/seed/spiritual/300/450'} 
-                alt={book.title}
+                src={book?.cover_url || 'https://picsum.photos/seed/spiritual/300/450'} 
+                alt={book?.title}
                 className="w-full h-full object-cover transition-transform group-hover:scale-110"
                 referrerPolicy="no-referrer"
               />
@@ -109,15 +113,22 @@ export default function BookLibrary() {
                 <Button variant="primary" size="sm" className="w-full">Read Book</Button>
               </div>
             </div>
-            <h3 className="font-bold text-primary-50 truncate">{book.title}</h3>
+            <h3 className="font-bold text-primary-50 truncate">{book?.title}</h3>
             <div className="flex items-center justify-between">
-              <p className="text-sm text-primary-400">{book.author}</p>
-              {book.release_year && <p className="text-xs text-primary-500">{book.release_year}</p>}
+              <p className="text-sm text-primary-400">{book?.author}</p>
+              {book?.release_year && <p className="text-xs text-primary-500">{book.release_year}</p>}
             </div>
           </motion.div>
         ))}
       </div>
 
+      {/* Line 117: Fallback if no books are found */}
+      {filteredBooks.length === 0 && !search && (
+        <div className="text-center py-20 text-primary-400">
+          <Book className="w-12 h-12 mx-auto mb-4 opacity-20" />
+          <p>No books available in the library yet.</p>
+        </div>
+      )}
     </div>
   );
 }
