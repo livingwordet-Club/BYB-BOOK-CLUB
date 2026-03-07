@@ -175,11 +175,19 @@ export default function BibleReader() {
     }
   };
 
-  const saveBookmark = async () => {
+   const saveBookmark = async () => {
     if (!activeVerse) return;
-    const newB = { id: Date.now(), ref: `${selectedBook} ${activeVerse.number}`, date: new Date().toLocaleDateString() };
-    setBookmarks([newB, ...bookmarks]);
-    setActiveVerse(null);
+    try {
+      const newB = await fetchFromDb('/api/bookmarks', 'POST', {
+        targetType: 'bible',
+        targetId: `${selectedBook} ${activeVerse.number}`,
+        description: `${selectedBook} ${activeVerse.number}`
+      });
+      if (newB) setBookmarks([newB, ...bookmarks]);
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save bookmark", err);
+    }
   };
 
   const renderVerses = () => {
