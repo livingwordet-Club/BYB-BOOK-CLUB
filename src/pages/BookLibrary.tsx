@@ -34,6 +34,36 @@ export default function BookLibrary() {
     }
   }, [token]);
 
+  const saveActivity = async (type: string, content: string, metadata: any = {}) => {
+    if (!selectedBook) return;
+    try {
+      await fetch('/api/activity', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          type,
+          content,
+          metadata: { 
+            ...metadata, 
+            bookId: selectedBook.id, 
+            bookTitle: selectedBook.title,
+            source: 'library'
+          }
+        })
+      });
+    } catch (err) {
+      console.error(`Failed to save ${type}:`, err);
+    }
+  };
+
+  const handleBookSelect = (book: any) => {
+    saveActivity('read', `Started reading ${book.title}`);
+    window.open(book.file_url, '_blank');
+  };
+
   const filteredBooks = books.filter(b => 
     b.title.toLowerCase().includes(search.toLowerCase()) || 
     b.author.toLowerCase().includes(search.toLowerCase())
@@ -65,7 +95,7 @@ export default function BookLibrary() {
           <motion.div
             key={book.id}
             whileHover={{ y: -10 }}
-            onClick={() => setSelectedBook(book)}
+            onClick={() => handleBookSelect(book)}
             className="cursor-pointer group"
           >
             <div className="relative aspect-[2/3] rounded-2xl overflow-hidden shadow-lg mb-3">
@@ -80,80 +110,14 @@ export default function BookLibrary() {
               </div>
             </div>
             <h3 className="font-bold text-primary-50 truncate">{book.title}</h3>
-            <p className="text-sm text-primary-400">{book.author}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-primary-400">{book.author}</p>
+              {book.release_year && <p className="text-xs text-primary-500">{book.release_year}</p>}
+            </div>
           </motion.div>
         ))}
       </div>
 
-      {/* Reader Popup */}
-      <AnimatePresence>
-        {selectedBook && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/80 backdrop-blur-sm p-4"
-          >
-              <motion.div
-                initial={{ scale: 0.9, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.9, y: 20 }}
-                className="bg-primary-900 w-full max-w-5xl h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col"
-              >
-                {/* Reader Header */}
-                <div className="bg-primary-950 text-white p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedBook(null)} className="text-white hover:bg-primary-900">
-                      <ArrowLeft className="w-5 h-5" />
-                    </Button>
-                    <Book className="w-6 h-6" />
-                    <div>
-                      <h2 className="font-bold">{selectedBook.title}</h2>
-                      <p className="text-xs text-primary-400">{selectedBook.author}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center bg-primary-900 rounded-lg px-2 mr-4">
-                      <Button variant="ghost" size="sm" onClick={() => setZoom(z => Math.max(50, z - 10))} className="text-white"><ZoomOut className="w-4 h-4" /></Button>
-                      <span className="text-xs w-12 text-center">{zoom}%</span>
-                      <Button variant="ghost" size="sm" onClick={() => setZoom(z => Math.min(200, z + 10))} className="text-white"><ZoomIn className="w-4 h-4" /></Button>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => setSelectedBook(null)} className="text-white hover:bg-primary-900"><X /></Button>
-                  </div>
-                </div>
-
-                {/* Reader Content */}
-                <div className="flex-1 overflow-y-auto p-12 bg-primary-950">
-                  <div 
-                    className="max-w-3xl mx-auto bg-primary-900 shadow-sm p-12 rounded-lg font-serif leading-relaxed text-primary-50 border border-primary-800"
-                    style={{ fontSize: `${zoom}%` }}
-                  >
-                    <h1 className="text-3xl font-bold mb-8 text-center">{selectedBook.title}</h1>
-                    <p className="whitespace-pre-wrap">
-                      {selectedBook.content || "This book's content is currently being digitized. Please check back soon for the full spiritual experience. In the meantime, you can explore other titles in our library or use the Bible reader for your daily meditation."}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Reader Tools */}
-                <div className="bg-primary-950 border-t border-white/10 p-4 flex items-center justify-center gap-8">
-                  <Button variant="ghost" className="flex flex-col items-center gap-1 text-primary-400 hover:text-white hover:bg-white/10">
-                    <Highlighter className="w-5 h-5" /> <span className="text-[10px]">Highlight</span>
-                  </Button>
-                  <Button variant="ghost" className="flex flex-col items-center gap-1 text-primary-400 hover:text-white hover:bg-white/10">
-                    <Bookmark className="w-5 h-5" /> <span className="text-[10px]">Bookmark</span>
-                  </Button>
-                  <Button variant="ghost" className="flex flex-col items-center gap-1 text-primary-400 hover:text-white hover:bg-white/10">
-                    <StickyNote className="w-5 h-5" /> <span className="text-[10px]">Note</span>
-                  </Button>
-                  <Button variant="ghost" className="flex flex-col items-center gap-1 text-primary-400 hover:text-white hover:bg-white/10">
-                    <Quote className="w-5 h-5" /> <span className="text-[10px]">Quote</span>
-                  </Button>
-                </div>
-              </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
