@@ -124,24 +124,20 @@ function Navbar() {
 }
 
 // Line 112
+// Line 112
 function PrivateRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, isLoading } = useAuth();
   
-  // 1. If we are still checking localStorage, don't redirect yet!
+  // Line 115: IMPORTANT - You must wait for loading to finish
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#050505] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-screen bg-[#050505] text-white">Loading...</div>;
   }
 
-  // 2. Only redirect once loading is finished and we are SURE there is no user
+  // Line 119: Only redirect once isLoading is FALSE and user is still NULL
   if (!user) {
     return <Navigate to="/" replace />;
   }
 
-  // 3. Admin check
   if (adminOnly && !user.isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
