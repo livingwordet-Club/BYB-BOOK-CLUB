@@ -270,39 +270,43 @@ async function startServer() {
     app.use(vite.middlewares);
   // Line 272
   // Line 272
+  // Line 272
   } else {
     const rootPath = process.cwd();
     const distPath = path.join(rootPath, 'dist');
-    
-    // 1. Tell Express EXACTLY where the assets are
-    // This prevents the "MIME type" error that causes the black screen
-    app.use('/assets', express.static(path.join(distPath, 'assets')));
-    
+    const assetsPath = path.join(distPath, 'assets');
+
+    // 1. Force the correct MIME type for the assets folder
+    app.use('/assets', express.static(assetsPath, {
+      immutable: true,
+      maxAge: '1y',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
+          res.setHeader('Content-Type', 'application/javascript');
+        } else if (filePath.endsWith('.css')) {
+          res.setHeader('Content-Type', 'text/css');
+        }
+      }
+    }));
+
     // 2. Serve the rest of the dist folder
     app.use(express.static(distPath));
 
     // 3. Handle SPA routing
     app.get("*", (req, res) => {
-      // API Guard
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API not found" });
       }
 
-      // File Guard: If the browser asks for a file (.js, .css) and it's missing, 
-      // do NOT send index.html. Send a 404 so the browser knows it's actually gone.
+      // If it's a file request that reached here, it's missing
       if (req.path.includes('.')) {
-        return res.status(404).send("Asset not found");
+        return res.status(404).send("File not found");
       }
 
-      // 4. Send the index.html for all other page routes
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      res.sendFile(indexPath);
     });
   }
-  const PORT = process.env.PORT || 10000;
-  app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`Server live on port ${PORT}`);
-  });
-}
 
 // --- BIBLE API PROXY ROUTES ---
 // Line 307: Only declare this ONCE
