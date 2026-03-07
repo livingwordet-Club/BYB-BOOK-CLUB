@@ -263,7 +263,6 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 
 // --- SERVER START ---
 // Line 268
-// Line 268: Replace your startServer function with this precise version
 async function startServer() {
   await initDb();
   
@@ -271,21 +270,28 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // Correctly resolve paths relative to the project root
-    // Since server.js is in 'dist', the static files are in the same folder
-    const distPath = path.resolve(__dirname,'');
+    // THIS IS THE FIX: Point to the root dist folder
+    const distPath = path.join(process.cwd(), 'dist');
     
-    // Line 278: Serve static files (js, css, images)
+    // Line 278: Serve the actual JS/CSS files
     app.use(express.static(distPath));
 
-    // Line 281: Handle SPA routing
+    // Line 281: Handle the "Blackout" by preventing HTML-as-JS errors
     app.get("*", (req, res) => {
-      // Guard: If it's a file request that reached here, it doesn't exist.
+      // If the browser asks for a file (like index.js) and it's missing, send 404
       if (req.path.includes('.') || req.path.startsWith('/api')) {
-        return res.status(404).send('Not Found');
+        return res.status(404).send('File Not Found');
       }
-      // Line 286: Send the index.html for all other routes
-      res.sendFile(path.join(distPath, "index.html"));
+
+      // Line 287: Send the index.html for page navigation
+      const indexPath = path.join(distPath, "index.html");
+      
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        // This will tell us EXACTLY where the file is missing in your logs
+        res.status(500).send(`Deployment Error: index.html missing at ${indexPath}`);
+      }
     });
   }
 
