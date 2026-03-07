@@ -18,6 +18,7 @@ export default function MessagesPage() {
       setSelectedUser(location.state.selectedUser);
     }
   }, [location.state]);
+
   const [users, setUsers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -83,16 +84,23 @@ export default function MessagesPage() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    (u.name || u.username).toLowerCase().includes(search.toLowerCase())
-  );
+  // Line 83: Added optional chaining to filter
+  const filteredUsers = users?.filter(u => 
+    (u?.name || u?.username || "").toLowerCase().includes(search.toLowerCase())
+  ) || [];
 
-  const chatMessages = messages.filter(m => 
-    (m.sender_id === selectedUser?.id && m.receiver_id === user?.id) ||
-    (m.sender_id === user?.id && m.receiver_id === selectedUser?.id)
-  );
+  // Line 87: Added optional chaining to filter
+  const chatMessages = messages?.filter(m => 
+    (m?.sender_id === selectedUser?.id && m?.receiver_id === user?.id) ||
+    (m?.sender_id === user?.id && m?.receiver_id === selectedUser?.id)
+  ) || [];
 
-  if (loading) return <div className="flex items-center justify-center h-screen">Loading Inbox...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white">
+      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-white mb-4"></div>
+      <p>Loading Inbox...</p>
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto p-6 h-[calc(100vh-120px)] flex flex-col">
@@ -120,24 +128,25 @@ export default function MessagesPage() {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {filteredUsers.map(u => (
+            {/* Line 122: Added optional chaining to map */}
+            {filteredUsers?.map(u => (
               <button
-                key={u.id}
+                key={u?.id}
                 onClick={() => setSelectedUser(u)}
                 className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors ${
-                  selectedUser?.id === u.id 
+                  selectedUser?.id === u?.id 
                     ? 'bg-primary-100 text-primary-900 dark:bg-primary-800 dark:text-white' 
                     : 'hover:bg-stone-50 text-stone-700 dark:text-stone-300 dark:hover:bg-primary-800/50'
                 }`}
               >
                 <img 
-                  src={u.profile_pic || `https://picsum.photos/seed/${u.username}/40`} 
+                  src={u?.profile_pic || `https://picsum.photos/seed/${u?.username}/40`} 
                   className="w-10 h-10 rounded-full object-cover"
                   referrerPolicy="no-referrer"
                 />
                 <div className="text-left">
-                  <p className="font-bold text-sm">{u.name || u.username}</p>
-                  <p className="text-xs opacity-60">@{u.username}</p>
+                  <p className="font-bold text-sm">{u?.name || u?.username}</p>
+                  <p className="text-xs opacity-60">@{u?.username}</p>
                 </div>
               </button>
             ))}
@@ -154,31 +163,32 @@ export default function MessagesPage() {
               <div className="p-4 border-b flex items-center justify-between dark:border-primary-800">
                 <div className="flex items-center gap-3">
                   <img 
-                    src={selectedUser.profile_pic || `https://picsum.photos/seed/${selectedUser.username}/40`} 
+                    src={selectedUser?.profile_pic || `https://picsum.photos/seed/${selectedUser?.username}/40`} 
                     className="w-10 h-10 rounded-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                   <div>
-                    <p className="font-bold text-stone-800 dark:text-white">{selectedUser.name || selectedUser.username}</p>
+                    <p className="font-bold text-stone-800 dark:text-white">{selectedUser?.name || selectedUser?.username}</p>
                     <p className="text-xs text-stone-500">Online</p>
                   </div>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {chatMessages.map((m, i) => (
+                {/* Line 165: Added optional chaining to map */}
+                {chatMessages?.map((m, i) => (
                   <div 
                     key={i} 
-                    className={`flex ${m.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${m?.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
                   >
                     <div className={`max-w-[70%] p-3 rounded-2xl text-sm ${
-                      m.sender_id === user?.id 
+                      m?.sender_id === user?.id 
                         ? 'bg-primary-600 text-white rounded-tr-none' 
                         : 'bg-stone-100 text-stone-800 rounded-tl-none dark:bg-primary-800 dark:text-stone-100'
                     }`}>
-                      <p>{m.content}</p>
-                      <p className={`text-[10px] mt-1 opacity-60 ${m.sender_id === user?.id ? 'text-right' : 'text-left'}`}>
-                        {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <p>{m?.content}</p>
+                      <p className={`text-[10px] mt-1 opacity-60 ${m?.sender_id === user?.id ? 'text-right' : 'text-left'}`}>
+                        {m?.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                       </p>
                     </div>
                   </div>
