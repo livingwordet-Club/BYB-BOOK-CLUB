@@ -23,11 +23,15 @@ export default function AdminPanel() {
   }, [token]);
 
   const fetchStats = async () => {
-    const res = await fetch('/api/admin/stats', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setStats(data);
+    try {
+      const res = await fetch('/api/admin/stats', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to fetch stats', err);
+    }
   };
 
   const handleUpload = async (e: React.FormEvent) => {
@@ -204,7 +208,7 @@ export default function AdminPanel() {
                 </div>
                 <div>
                   <p className="text-sm text-primary-900 dark:text-primary-100">
-                    <span className="font-bold">@{a.username}</span> saved a {a.type}
+                    <span className="font-bold">@{a.username}</span> {a.description || 'performed an action'}
                   </p>
                   <p className="text-xs text-primary-500 mt-1 dark:text-primary-400">{new Date(a.created_at).toLocaleString()}</p>
                 </div>

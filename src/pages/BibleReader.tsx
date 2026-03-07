@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Settings, X, Menu, MessageSquare, BookOpen, 
+  Settings, X, MessageSquare, BookOpen, 
   ChevronLeft, ChevronRight, Loader2, Bookmark, 
-  Quote, PenTool, Heart, Trash2, ZoomIn, ZoomOut,
-  Library, Check, Palette, Hand, Mic, Save, Search
+  Library, Hand, Mic, Save, Search
 } from 'lucide-react';
 import { Button } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
 
 // --- INTERNAL CONFIGURATION ---
 const APP_SLOGAN = "The Word is Living and Active";
-const API_KEY = 'JT9CAQaoRjmSgdBxcT4tG';
-const BASE_URL = 'https://rest.api.bible/v1'; 
 
 const HIGHLIGHT_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', 
@@ -26,7 +23,7 @@ const FONT_SIZES = [
 ];
 
 export default function BibleReader() {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   // Data State
@@ -81,12 +78,16 @@ export default function BibleReader() {
         const versions = await fetchFromDb('/api/bible/versions');
         const userData = await fetchFromDb('/api/user/bible-data');
         
-        if (versions && Array.isArray(versions)) setBibles(versions);
+        if (versions && Array.isArray(versions)) {
+          setBibles(versions);
+          if (versions.length > 0) {
+            setSelectedBible(versions[0].id);
+          }
+        }
         if (userData) {
             setHighlights(userData.highlights || []);
             setPrayers(userData.prayers || []);
         }
-        if (versions && versions.length > 0) setSelectedBible(versions[0].id);
       } catch (err) {
         console.error("Failed to load initial data", err);
       }
@@ -98,7 +99,10 @@ export default function BibleReader() {
   useEffect(() => {
     if (selectedBible) {
       fetchFromDb(`/api/bible/${selectedBible}/books`).then(data => {
-          if (data && Array.isArray(data)) setBooks(data);
+          if (data && Array.isArray(data)) {
+            setBooks(data);
+            if (data.length > 0) setSelectedBook(data[0].id);
+          }
       });
     }
   }, [selectedBible]);
@@ -106,7 +110,10 @@ export default function BibleReader() {
   useEffect(() => {
     if (selectedBible && selectedBook) {
       fetchFromDb(`/api/bible/${selectedBible}/books/${selectedBook}/chapters`).then(data => {
-          if (data && Array.isArray(data)) setChapters(data);
+          if (data && Array.isArray(data)) {
+            setChapters(data);
+            if (data.length > 0) setSelectedChapter(data[0].id);
+          }
       });
     }
   }, [selectedBible, selectedBook]);
@@ -221,7 +228,7 @@ export default function BibleReader() {
   const currentFontSize = FONT_SIZES.find(f => f.id === fontSize) || FONT_SIZES[0];
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#050505] text-stone-300 font-sans selection:bg-blue-500/30">
+    <div className="h-screen w-full flex flex-col overflow-hidden bg-[#050505] text-stone-300 font-sans selection:bg-blue-500/30">
       
       {/* --- TOP NAVIGATION --- */}
       <nav className="h-20 w-full flex-none flex items-center justify-between px-6 z-[100] border-b border-white/5 bg-[#050505]/80 backdrop-blur-md">

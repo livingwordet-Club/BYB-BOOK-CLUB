@@ -1,225 +1,279 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
-import { Card, Button } from '../components/UI';
-import { useNavigate } from 'react-router-dom';
-import { Book, TrendingUp, Clock, MessageCircle, UserPlus, BookOpen, ChevronRight, Heart } from 'lucide-react';
+import { Button, Card } from '../components/UI';
+import { BookOpen, Users, TrendingUp, MessageSquare, UserPlus, Heart } from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface Stats {
+  totalUsers: number;
+  totalBooks: number;
+  activeReaders: number;
+}
+
+interface Suggestion {
+  id: number;
+  username: string;
+  name: string;
+  profile_pic: string;
+}
+
+interface Activity {
+  id: number;
+  user_id: number;
+  username: string;
+  name: string;
+  profile_pic: string;
+  action_type: string;
+  description: string;
+  created_at: string;
+}
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-  const { token, user, logout } = useAuth();
-  const [data, setData] = useState<any>(null);
-  const [showWelcome, setShowWelcome] = useState(true);
+  const { token, user } = useAuth();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [trendingBooks, setTrendingBooks] = useState<any[]>([]);
+  const [recentMessages, setRecentMessages] = useState<any[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [activityStats, setActivityStats] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchDashboard = async () => {
       try {
-        const res = await fetch('/api/dashboard', {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const response = await axios.get('/api/dashboard', {
+          headers: { Authorization: `Bearer ${token}` }
         });
-        
-        const contentType = res.headers.get("content-type");
-        if (res.ok && contentType && contentType.includes("application/json")) {
-          const data = await res.json();
-          if (data && !data.error) {
-            setData(data);
-          }
-        } else if (res.status === 401 || res.status === 403) {
-          logout();
-        }
+        setStats(response.data.stats);
+        setSuggestions(response.data.suggestions);
+        setTrendingBooks(response.data.trendingBooks);
+        setRecentMessages(response.data.recentMessages);
+        setActivityStats(response.data.activityStats);
       } catch (err) {
-        console.error("Failed to fetch dashboard:", err);
+        console.error('Failed to fetch dashboard', err);
       }
     };
 
-    fetchData();
+    const fetchActivities = async () => {
+      try {
+        const response = await axios.get('/api/activities', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setActivities(response.data);
+      } catch (err) {
+        console.error('Failed to fetch activities', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    const timer = setTimeout(() => setShowWelcome(false), 3000);
-    return () => clearTimeout(timer);
-  }, [token, logout]);
+    fetchDashboard();
+    fetchActivities();
+  }, [token]);
 
-  // Line 41: Safety check to prevent rendering with null data
-  if (!data) return <div className="flex items-center justify-center h-screen bg-[#050505] text-white">Loading Dashboard...</div>;
+  if (loading) return <div className="p-8 text-center text-primary-600">Loading Dashboard...</div>;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8">
-      <AnimatePresence>
-        {showWelcome && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.2 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/90 backdrop-blur-md"
-          >
-            <div className="text-center text-white p-8">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                className="inline-block mb-6"
-              >
-                <BookOpen className="w-24 h-24" />
-              </motion.div>
-              <h1 className="text-5xl font-bold mb-4">Welcome to BYB MKC</h1>
-              <p className="text-2xl text-primary-300 italic">Your Spiritual Book Library</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div className="max-w-7xl mx-auto p-6 space-y-8">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-primary-900 dark:text-primary-50">Welcome, {user?.name || user?.username}!</h1>
+          <p className="text-primary-600 dark:text-primary-400 font-medium">Your Spiritual Book Library</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" size="sm" className="flex items-center gap-2">
+            <Heart size={18} /> Daily Verse
+          </Button>
+          <Button variant="primary" size="sm" className="flex items-center gap-2">
+            <BookOpen size={18} /> Start Reading
+          </Button>
+        </div>
+      </header>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard icon={<Users className="text-blue-500" />} label="Total Users" value={stats?.totalUsers || 0} />
+        <StatCard icon={<BookOpen className="text-emerald-500" />} label="Total Books" value={stats?.totalBooks || 0} />
+        <StatCard icon={<TrendingUp className="text-amber-500" />} label="Active Readers" value={stats?.activeReaders || 0} />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Feed */}
+        {/* Main Content */}
         <div className="lg:col-span-2 space-y-8">
+          {/* Activity Tracker Visualization */}
           <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold text-primary-50 flex items-center gap-2">
-                <TrendingUp className="text-primary-400" /> Trending Books
-              </h2>
-              <Button variant="ghost" size="sm">View All</Button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Line 83: Added optional chaining */}
-              {data?.trending?.map((book: any) => (
-                <Card key={book.id} className="group cursor-pointer border-primary-800 hover:border-primary-600 transition-all">
-                  <div className="flex gap-4">
-                    <img 
-                      src={book.cover_url || 'https://picsum.photos/seed/book/100/150'} 
-                      alt={book.title}
-                      className="w-24 h-32 object-cover rounded-lg shadow-sm"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="flex flex-col justify-between">
-                      <div>
-                        <h3 className="font-bold text-primary-50 group-hover:text-primary-400 transition-colors">{book.title}</h3>
-                        <p className="text-sm text-primary-400">{book.author}</p>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 dark:text-primary-100">
+              <TrendingUp size={20} className="text-primary-600" /> Activity Tracker
+            </h2>
+            <Card className="p-6">
+              <div className="flex items-end gap-2 h-32">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
+                  const dayData = activityStats[i] || { count: 0 };
+                  const height = Math.min(100, (dayData.count / 10) * 100);
+                  return (
+                    <div key={day} className="flex-1 flex flex-col items-center gap-2">
+                      <div className="w-full bg-primary-100 rounded-t-lg relative group dark:bg-primary-800" style={{ height: '100%' }}>
+                        <motion.div 
+                          initial={{ height: 0 }}
+                          animate={{ height: `${height}%` }}
+                          className="absolute bottom-0 left-0 right-0 bg-primary-600 rounded-t-lg"
+                        />
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-primary-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                          {dayData.count} actions
+                        </div>
                       </div>
-                      <Button size="sm" variant="outline" className="w-fit" onClick={() => navigate('/books')}>Read Now</Button>
+                      <span className="text-[10px] font-bold text-primary-400 uppercase">{day}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 dark:text-primary-100">
+              <TrendingUp size={20} className="text-primary-600" /> Trending Books
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {trendingBooks.map((book) => (
+                <Card key={book.id} className="flex gap-4 p-4 hover:shadow-md transition-shadow cursor-pointer">
+                  <div className="w-20 h-28 bg-primary-100 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-primary-400 dark:bg-primary-800">
+                    {book.cover_url ? (
+                      <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <BookOpen size={32} />
+                    )}
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <h3 className="font-bold text-primary-900 dark:text-primary-50 line-clamp-1">{book.title}</h3>
+                    <p className="text-sm text-primary-600 dark:text-primary-400">{book.author}</p>
+                    <div className="mt-2 flex items-center gap-1 text-xs text-amber-500 font-bold">
+                      <TrendingUp size={12} /> Popular this week
                     </div>
                   </div>
                 </Card>
               ))}
+              {trendingBooks.length === 0 && (
+                <p className="text-sm text-primary-400 italic">No books uploaded yet</p>
+              )}
             </div>
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-primary-50 flex items-center gap-2 mb-4">
-              <Clock className="text-primary-400" /> New Updates
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 dark:text-primary-100">
+              <MessageSquare size={20} className="text-primary-600" /> Recent Messages
             </h2>
-            <div className="space-y-4">
-              {/* Line 110: Added optional chaining */}
-              {data?.updates?.map((book: any) => (
-                <Card key={book.id} onClick={() => navigate('/books')} className="flex items-center justify-between hover:bg-primary-900/50 cursor-pointer border-primary-800">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 bg-primary-800 rounded-lg">
-                      <Book className="text-primary-400" />
+            <Card className="p-0 overflow-hidden">
+              <div className="p-4 border-b border-primary-50 dark:border-primary-800 flex items-center justify-between">
+                <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Latest conversations</span>
+                <Button variant="ghost" size="sm" className="text-xs">View All</Button>
+              </div>
+              <div className="divide-y divide-primary-50 dark:divide-primary-800">
+                {recentMessages.map((msg) => (
+                  <div key={msg.id} className="p-4 flex items-center gap-4 hover:bg-primary-50 transition-colors dark:hover:bg-primary-900/50">
+                    <div className="w-10 h-10 rounded-full bg-primary-200 flex items-center justify-center text-primary-700 font-bold dark:bg-primary-700 dark:text-primary-200">
+                      {msg.sender_pic ? (
+                        <img src={msg.sender_pic} alt={msg.sender_username} className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        msg.sender_name ? msg.sender_name[0] : msg.sender_username[0]
+                      )}
                     </div>
-                    <div>
-                      <h3 className="font-bold text-primary-50">{book.title}</h3>
-                      <p className="text-xs text-primary-400">Added {new Date(book.created_at).toLocaleDateString()}</p>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-bold text-primary-900 dark:text-primary-50">{msg.sender_name || msg.sender_username}</h4>
+                      <p className="text-xs text-primary-600 truncate dark:text-primary-400">{msg.content}</p>
                     </div>
+                    <span className="text-[10px] text-primary-400">
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                  <ChevronRight className="text-primary-600" />
-                </Card>
-              ))}
-            </div>
+                ))}
+                {recentMessages.length === 0 && (
+                  <p className="p-8 text-center text-primary-400 italic text-sm">No recent messages</p>
+                )}
+              </div>
+            </Card>
           </section>
         </div>
 
         {/* Sidebar */}
         <div className="space-y-8">
-          {data?.currentRead && (
-            <Card className="bg-primary-950 text-white border-none shadow-xl">
-              <h3 className="text-primary-500 text-sm font-bold uppercase tracking-wider mb-4">Currently Reading</h3>
-              <div className="flex gap-4">
-                <img src={data.currentRead.cover_url} className="w-16 h-24 rounded shadow-lg" referrerPolicy="no-referrer" />
-                <div>
-                  <h4 className="font-bold text-lg">{data.currentRead.title}</h4>
-                  <p className="text-primary-400 text-sm mb-4">{data.currentRead.author}</p>
-                  <Button size="sm" className="bg-primary-100 text-primary-950 hover:bg-primary-200" onClick={() => navigate('/books')}>Continue</Button>
-                </div>
+          <section>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 dark:text-primary-100">
+              <TrendingUp size={20} className="text-primary-600" /> Recent Activity
+            </h2>
+            <Card className="p-0 overflow-hidden">
+              <div className="divide-y divide-primary-50 dark:divide-primary-800">
+                {activities.map((activity) => (
+                  <div key={activity.id} className="p-4 flex gap-3 hover:bg-primary-50 transition-colors dark:hover:bg-primary-900/50">
+                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold text-xs flex-shrink-0 dark:bg-primary-800">
+                      {activity.profile_pic ? (
+                        <img src={activity.profile_pic} alt={activity.username} className="w-full h-full rounded-full object-cover" />
+                      ) : (
+                        activity.username[0]
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-primary-900 dark:text-primary-50">
+                        <span className="font-bold">{activity.name || activity.username}</span> {activity.description}
+                      </p>
+                      <p className="text-[10px] text-primary-400 mt-1">
+                        {new Date(activity.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {activities.length === 0 && (
+                  <p className="p-8 text-center text-primary-400 italic text-sm">No activity yet</p>
+                )}
               </div>
             </Card>
-          )}
+          </section>
 
-          <Card className="border-primary-800 bg-primary-900/20">
-            <h3 className="text-primary-50 font-bold mb-4 flex items-center gap-2">
-              <Heart className="w-5 h-5 text-red-400" /> Spiritual Journey
-            </h3>
-            <div className="space-y-4">
-              {/* Line 149: Added optional chaining */}
-              {data?.activities && data.activities.length > 0 ? (
-                data.activities.map((act: any) => (
-                  <div key={act.id} className="p-3 bg-primary-800/30 rounded-xl border border-primary-700/50">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-primary-400">{act.type}</span>
-                      <span className="text-[10px] opacity-40">{new Date(act.created_at).toLocaleDateString()}</span>
+          <section>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 dark:text-primary-100">
+              <UserPlus size={20} className="text-primary-600" /> Friend Suggestions
+            </h2>
+            <Card className="space-y-4">
+              {suggestions.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold dark:bg-primary-800 dark:text-primary-300">
+                      {s.name ? s.name[0] : s.username[0]}
                     </div>
-                    <p className="text-sm text-primary-100 italic">"{act.content}"</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-primary-400 text-center py-4">No spiritual activity yet. Start reading the Bible!</p>
-              )}
-              <Button variant="outline" className="w-full text-xs" onClick={() => navigate('/bible')}>Open Bible</Button>
-            </div>
-          </Card>
-
-          <Card className="border-primary-800 bg-primary-900/20">
-            <h3 className="text-primary-50 font-bold mb-4 flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-primary-400" /> Messages
-            </h3>
-            <div className="space-y-4">
-              {/* Line 173: Added optional chaining */}
-              {data?.recentMessages && data.recentMessages.length > 0 ? (
-                data.recentMessages.map((msg: any) => (
-                  <div 
-                    key={msg.id} 
-                    className="flex items-center gap-3 p-2 hover:bg-primary-800/50 rounded-xl cursor-pointer transition-colors group"
-                    onClick={() => navigate('/messages', { state: { selectedUser: { id: msg.sender_id, username: msg.sender_name, profile_pic: msg.sender_pic } } })}
-                  >
-                    <img src={msg.sender_pic || 'https://picsum.photos/seed/user/40'} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-primary-100 truncate">{msg.sender_name}</p>
-                      <p className="text-[10px] text-primary-400 truncate">{msg.content}</p>
+                    <div>
+                      <h4 className="text-sm font-bold text-primary-900 dark:text-primary-50">{s.name || s.username}</h4>
+                      <p className="text-[10px] text-primary-500 dark:text-primary-400">Active Reader</p>
                     </div>
-                    <span className="text-[8px] text-primary-600">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-primary-400 italic">No recent messages</p>
-              )}
-              <Button variant="outline" className="w-full" onClick={() => navigate('/messages')}>Open Inbox</Button>
-            </div>
-          </Card>
-
-          <Card className="border-primary-800 bg-primary-900/20">
-            <h3 className="text-primary-50 font-bold mb-4 flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-primary-400" /> Friend Suggestions
-            </h3>
-            <div className="space-y-4">
-              {/* Line 202: Added optional chaining to prevent the map crash */}
-              {data?.suggestions?.map((s: any) => (
-                <div key={s.id} className="flex items-center justify-between">
-                  <div 
-                    className="flex items-center gap-3 cursor-pointer group"
-                    onClick={() => navigate('/profile', { state: { selectedFriend: s } })}
-                  >
-                    <img src={s.profile_pic || 'https://picsum.photos/seed/user/40'} className="w-10 h-10 rounded-full object-cover ring-primary-500 transition-all" referrerPolicy="no-referrer" />
-                    <span className="text-sm font-medium text-primary-100 group-hover:text-primary-400 transition-colors">{s.name || s.username}</span>
-                  </div>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="p-2"
-                    onClick={() => navigate('/profile', { state: { selectedFriend: s } })}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                  </Button>
+                  <Button variant="outline" size="sm" className="px-3 py-1 text-xs">Follow</Button>
                 </div>
               ))}
-            </div>
-          </Card>
+              {suggestions.length === 0 && (
+                <p className="text-sm text-primary-400 text-center py-4 italic">No suggestions yet</p>
+              )}
+            </Card>
+          </section>
         </div>
       </div>
     </div>
   );
+}
+
+function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <Card className="flex items-center gap-4 p-6 hover:scale-[1.02] transition-transform">
+      <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center text-2xl dark:bg-primary-800">
+        {icon}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-primary-600 dark:text-primary-400">{label}</p>
+        <p className="text-2xl font-bold text-primary-900 dark:text-primary-50">{value.toLocaleString()}</p>
+      </div>
+    </Card>
+  );
+}
+
+function CardSection({ children }: { children: React.ReactNode }) {
+  return <div className="space-y-4">{children}</div>;
 }
