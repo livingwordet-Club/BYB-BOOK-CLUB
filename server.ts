@@ -147,6 +147,7 @@ async function initDb() {
         note TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
       CREATE TABLE IF NOT EXISTS bookmarks (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -346,13 +347,12 @@ app.get('/api/books', authenticateToken, async (req, res) => {
 });
 
 // Profile
-app.get('/api/users/:id', authenticateToken, async (req, res) => {
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT id as other_id, username, name, profile_pic FROM users WHERE id = $1', [req.params.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const result = await pool.query('SELECT name, email, bio, profile_verse, profile_pic FROM users WHERE id = $1', [req.user.id]);
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user' });
+    res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
 
@@ -509,6 +509,7 @@ app.post('/api/prayers', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to save prayer' });
   }
 });
+
 app.post('/api/bookmarks', authenticateToken, async (req, res) => {
   const { targetType, targetId, description } = req.body;
   try {
@@ -694,6 +695,16 @@ app.get('/api/conversations', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/users/:id', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id as other_id, username, name, profile_pic FROM users WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
 // Vite Integration
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -703,9 +714,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, '')));
+    app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(__dirname, '', 'index.html'));
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
 
