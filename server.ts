@@ -263,6 +263,7 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 
 // --- SERVER START ---
 // Line 268
+// Line 268: Replace your startServer function with this precise version
 async function startServer() {
   await initDb();
   
@@ -270,23 +271,24 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // Use the directory where server.js lives (which is /dist)
+    // Correctly resolve paths relative to the project root
+    // Since server.js is in 'dist', the static files are in the same folder
     const distPath = path.resolve(__dirname);
     
-    // Explicitly serve static assets first
+    // Line 278: Serve static files (js, css, images)
     app.use(express.static(distPath));
-    
-    // Catch-all must specifically handle the index.html delivery
+
+    // Line 281: Handle SPA routing
     app.get("*", (req, res) => {
-      // If it's an API or Upload call that reached here, it's a real 404
-      if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
-        return res.status(404).send('Not found');
+      // Guard: If it's a file request that reached here, it doesn't exist.
+      if (req.path.includes('.') || req.path.startsWith('/api')) {
+        return res.status(404).send('Not Found');
       }
-      // Send index.html for everything else (SPA routing)
+      // Line 286: Send the index.html for all other routes
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-  
+
   const PORT = process.env.PORT || 10000;
   app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server live on port ${PORT}`);
