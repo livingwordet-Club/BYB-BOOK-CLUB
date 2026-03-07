@@ -1,198 +1,175 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
-import { ThemeProvider, useTheme } from './hooks/useTheme';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
-import ProfileSetup from './pages/ProfileSetup';
-import BibleReader from './pages/BibleReader';
-import BookLibrary from './pages/BookLibrary';
-import AudioBookLibrary from './pages/AudioBookLibrary';
-import ProfilePage from './pages/ProfilePage';
+import Library from './pages/Library';
+import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
-import MessagesPage from './pages/MessagesPage';
+import Messages from './pages/Messages';
+import BibleReader from './pages/BibleReader';
+import Socials from './pages/Socials';
+import Reader from './pages/Reader';
 import Footer from './components/Footer';
-import { motion } from 'motion/react';
-import { BookOpen, Home, Book as BookIcon, User, Shield, LogOut, Menu, X, Headphones } from 'lucide-react';
+import { BookOpen, User, MessageSquare, LayoutDashboard, LogOut, Menu, X, Shield, Book, Share2 } from 'lucide-react';
+import { Button } from './components/UI';
 
-function Navbar() {
-  const { user, logout } = useAuth();
-  const { isDarkMode, toggleDarkMode } = useTheme();
-  const [isOpen, setIsOpen] = useState(false);
-  const location = useLocation();
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const { token, isLoading } = useAuth();
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  return token ? <>{children}</> : <Navigate to="/auth" />;
+}
 
-  if (!user) return null;
-
-  const links = [
-    { to: '/dashboard', label: 'Dashboard', icon: Home },
-    { to: '/bible', label: 'Bible', icon: BookOpen },
-    { to: '/books', label: 'Library', icon: BookIcon },
-    { to: '/audiobooks', label: 'Audio', icon: Headphones },
-    { to: '/profile', label: 'Profile', icon: User },
-  ];
-
-  if (user?.isAdmin) {
-    links.push({ to: '/admin', label: 'Admin', icon: Shield });
-  }
+function Layout({ children }: { children: React.ReactNode }) {
+  const { logout, user } = useAuth();
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
   return (
-    <nav className="bg-[#283644] border-b border-white/10 sticky top-0 z-40 dark:bg-primary-950/80 dark:border-primary-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link to="/dashboard" className="flex items-center gap-2">
-              <div className="bg-primary-600 p-1.5 rounded-lg dark:bg-primary-800">
-                <BookOpen className="w-6 h-6 text-white" />
-              </div>
-              <span className="text-xl font-bold text-white hidden sm:block">BYB MKC</span>
-            </Link>
-          </div>
-
-          {/* Desktop Menu */}
-          <div className="hidden md:flex items-center space-x-4">
-            {/* FIX: Added ?. to map */}
-            {links?.map(link => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
-                  location.pathname === link.to 
-                    ? 'bg-white/20 text-white' 
-                    : 'text-stone-300 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <link.icon className="w-4 h-4" />
-                {link.label}
+    <div className="min-h-screen bg-primary-50 dark:bg-primary-950 flex flex-col">
+      <nav className="bg-white border-b border-primary-100 dark:bg-primary-900 dark:border-primary-800 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16">
+            <div className="flex items-center">
+              <Link to="/" className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-xl">
+                <BookOpen size={28} />
+                <span className="hidden sm:inline">BYB MKC</span>
               </Link>
-            ))}
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
-          </div>
+            </div>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center">
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-white p-2"
-            >
-              {isOpen ? <X /> : <Menu />}
-            </button>
+            {/* Desktop Nav */}
+            <div className="hidden md:flex items-center gap-6">
+              <NavLink to="/" icon={<LayoutDashboard size={18} />} label="Dashboard" />
+              <NavLink to="/bible" icon={<Book size={18} />} label="Bible" />
+              <NavLink to="/socials" icon={<Share2 size={18} />} label="Socials" />
+              <NavLink to="/library" icon={<BookOpen size={18} />} label="Library" />
+              <NavLink to="/messages" icon={<MessageSquare size={18} />} label="Messages" />
+              <NavLink to="/profile" icon={<User size={18} />} label="Profile" />
+              {user?.isAdmin && (
+                <NavLink to="/admin" icon={<Shield size={18} />} label="Admin" />
+              )}
+              <Button variant="ghost" size="sm" onClick={logout} className="flex items-center gap-2 text-red-600 hover:text-red-700 hover:bg-red-50">
+                <LogOut size={18} /> Logout
+              </Button>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <div className="md:hidden flex items-center">
+              <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-primary-600 dark:text-primary-400">
+                {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Mobile Menu */}
-      {isOpen && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="md:hidden bg-[#283644] border-b border-white/10 p-4 space-y-2 dark:bg-primary-950/90 dark:border-primary-900"
-        >
-          {links.map(link => (
-            <Link
-              key={link.to}
-              to={link.to}
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-colors ${
-                location.pathname === link.to 
-                  ? 'bg-white/20 text-white' 
-                  : 'text-stone-300 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <link.icon className="w-5 h-5" />
-              {link.label}
-            </Link>
-          ))}
-          <button
-            onClick={() => {
-              logout();
-              setIsOpen(false);
-            }}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium text-red-400 hover:bg-red-500/10 w-full text-left"
-          >
-            <LogOut className="w-5 h-5" />
-            Logout
-          </button>
-        </motion.div>
-      )}
-    </nav>
+        {/* Mobile Nav */}
+        {isMenuOpen && (
+          <div className="md:hidden bg-white border-t border-primary-100 dark:bg-primary-900 dark:border-primary-800 p-4 space-y-2">
+            <MobileNavLink to="/" label="Dashboard" onClick={() => setIsMenuOpen(false)} />
+            <MobileNavLink to="/bible" label="Bible" onClick={() => setIsMenuOpen(false)} />
+            <MobileNavLink to="/socials" label="Socials" onClick={() => setIsMenuOpen(false)} />
+            <MobileNavLink to="/library" label="Library" onClick={() => setIsMenuOpen(false)} />
+            <MobileNavLink to="/messages" label="Messages" onClick={() => setIsMenuOpen(false)} />
+            <MobileNavLink to="/profile" label="Profile" onClick={() => setIsMenuOpen(false)} />
+            {user?.isAdmin && (
+              <MobileNavLink to="/admin" label="Admin" onClick={() => setIsMenuOpen(false)} />
+            )}
+            <Button variant="ghost" size="sm" onClick={logout} className="w-full justify-start text-red-600">
+              Logout
+            </Button>
+          </div>
+        )}
+      </nav>
+
+      <main className="flex-1">
+        {children}
+      </main>
+
+      <Footer />
+    </div>
   );
 }
 
-// Line 112
-// Line 112
-f// Line 112: Hardened PrivateRoute
-function PrivateRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
-  const { user, isLoading } = useAuth();
-  
-  // Force a visible loading state so the screen isn't just black
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mb-4"></div>
-        <p className="text-xl font-medium">Loading BYB Book Club...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/" replace />;
-  }
-
-  if (adminOnly && !user?.isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
-  return <>{children}</>;
+function NavLink({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+  return (
+    <Link to={to} className="flex items-center gap-2 text-primary-600 hover:text-primary-900 font-medium transition-colors dark:text-primary-400 dark:hover:text-primary-100">
+      {icon}
+      <span>{label}</span>
+    </Link>
+  );
 }
 
+function MobileNavLink({ to, label, onClick }: { to: string; label: string; onClick: () => void }) {
+  return (
+    <Link to={to} onClick={onClick} className="block px-4 py-2 text-primary-600 hover:bg-primary-50 rounded-lg dark:text-primary-400 dark:hover:bg-primary-800">
+      {label}
+    </Link>
+  );
+}
+
+// Placeholder pages
 export default function App() {
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <AppContent />
-      </ThemeProvider>
+      <Router>
+        <Routes>
+          <Route path="/auth" element={<AuthPage />} />
+          <Route path="/" element={
+            <PrivateRoute>
+              <Layout>
+                <Dashboard />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/library" element={
+            <PrivateRoute>
+              <Layout>
+                <Library />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/bible" element={
+            <PrivateRoute>
+              <Layout>
+                <BibleReader />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/socials" element={
+            <PrivateRoute>
+              <Layout>
+                <Socials />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/reader" element={
+            <PrivateRoute>
+              <Reader />
+            </PrivateRoute>
+          } />
+          <Route path="/messages" element={
+            <PrivateRoute>
+              <Layout>
+                <Messages />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/profile" element={
+            <PrivateRoute>
+              <Layout>
+                <Profile />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/admin" element={
+            <PrivateRoute>
+              <Layout>
+                <AdminPanel />
+              </Layout>
+            </PrivateRoute>
+          } />
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Router>
     </AuthProvider>
-  );
-}
-
-function AppContent() {
-  const { isDarkMode } = useTheme();
-
-  return (
-    <Router>
-      <div className={`min-h-screen flex flex-col transition-colors duration-300 relative overflow-hidden ${isDarkMode ? 'dark bg-[#050505]' : 'bg-[#F7F6E5]'}`}>
-        {isDarkMode && (
-          <div className="lens-background">
-            <div className="lens-glow" />
-            <div className="lens-grid" />
-            <div className="lens-scan-line" />
-          </div>
-        )}
-        <div className="relative z-10 flex flex-col min-h-screen">
-          <Navbar />
-          <main className="flex-1">
-            <Routes>
-              <Route path="/" element={<AuthPage />} />
-              <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-              <Route path="/setup-profile" element={<PrivateRoute><ProfileSetup /></PrivateRoute>} />
-              <Route path="/bible" element={<PrivateRoute><BibleReader /></PrivateRoute>} />
-              <Route path="/books" element={<PrivateRoute><BookLibrary /></PrivateRoute>} />
-              <Route path="/audiobooks" element={<PrivateRoute><AudioBookLibrary /></PrivateRoute>} />
-              <Route path="/profile" element={<PrivateRoute><ProfilePage /></PrivateRoute>} />
-              <Route path="/messages" element={<PrivateRoute><MessagesPage /></PrivateRoute>} />
-              <Route path="/admin" element={<PrivateRoute adminOnly><AdminPanel /></PrivateRoute>} />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </div>
-    </Router>
   );
 }
