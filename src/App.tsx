@@ -5,7 +5,6 @@ import { ThemeProvider, useTheme } from './hooks/useTheme';
 import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import ProfileSetup from './pages/ProfileSetup';
-//import ForgotPassword from './pages/forgotPassword';
 import BibleReader from './pages/BibleReader';
 import BookLibrary from './pages/BookLibrary';
 import AudioBookLibrary from './pages/AudioBookLibrary';
