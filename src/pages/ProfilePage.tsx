@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Card, Button } from '../components/UI';
-import { User, Mail, Book, Heart, Bookmark, Highlighter, StickyNote, Quote, MessageCircle, X, ChevronRight, Settings, Trash2, Check, ArrowLeft, Camera, Upload, ZoomIn, ZoomOut } from 'lucide-react';
+import { User, Mail, Book, Heart, Bookmark, Highlighter, Quote, MessageCircle, X, ChevronRight, Settings, Trash2, Check, ArrowLeft, Camera, ZoomIn, ZoomOut } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import Cropper from 'react-easy-crop';
 
@@ -47,7 +47,7 @@ async function getCroppedImg(imageSrc: string, pixelCrop: any): Promise<Blob | n
   });
 }
 
-export default function ProfilePage() {
+export default function Profile() {
   const location = useLocation();
   const navigate = useNavigate();
   const { token, user: authUser, logout } = useAuth();
@@ -110,10 +110,6 @@ export default function ProfilePage() {
     } finally {
       setUploading(false);
     }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // This is replaced by handleFileChange and handleUploadCroppedImage
   };
 
   useEffect(() => {
@@ -279,7 +275,7 @@ export default function ProfilePage() {
             </Button>
             <Button 
               variant="outline" 
-              onClick={() => navigate('/setup-profile')}
+              onClick={() => navigate('/profile/setup')}
               className="border-primary-400 text-primary-400 hover:bg-primary-800 dark:border-primary-600 dark:text-primary-600 dark:hover:bg-primary-900"
             >
               Edit Profile
@@ -317,7 +313,7 @@ export default function ProfilePage() {
                     <Book className="w-4 h-4 text-primary-600 dark:text-primary-400" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm text-primary-900 font-medium dark:text-primary-100">Saved a {a.type}</p>
+                    <p className="text-sm text-primary-900 font-medium dark:text-primary-100">{a.description || `Performed a ${a.type}`}</p>
                     <p className="text-xs text-primary-600 dark:text-primary-400">{new Date(a.created_at).toLocaleDateString()}</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-primary-400 dark:text-primary-600" />
