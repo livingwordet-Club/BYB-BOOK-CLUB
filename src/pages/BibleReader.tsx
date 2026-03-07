@@ -81,7 +81,7 @@ export default function BibleReader() {
         const versions = await fetchFromDb('/api/bible/versions');
         const userData = await fetchFromDb('/api/user/bible-data');
         
-        if (versions) setBibles(versions);
+        if (versions && Array.isArray(versions)) setBibles(versions);
         if (userData) {
             setHighlights(userData.highlights || []);
             setPrayers(userData.prayers || []);
@@ -92,13 +92,13 @@ export default function BibleReader() {
       }
       setLoading(false);
     };
-    initLoad();
+    if (token) initLoad();
   }, [token]);
 
   useEffect(() => {
     if (selectedBible) {
       fetchFromDb(`/api/bible/${selectedBible}/books`).then(data => {
-          if (data) setBooks(data);
+          if (data && Array.isArray(data)) setBooks(data);
       });
     }
   }, [selectedBible]);
@@ -106,7 +106,7 @@ export default function BibleReader() {
   useEffect(() => {
     if (selectedBible && selectedBook) {
       fetchFromDb(`/api/bible/${selectedBible}/books/${selectedBook}/chapters`).then(data => {
-          if (data) setChapters(data);
+          if (data && Array.isArray(data)) setChapters(data);
       });
     }
   }, [selectedBible, selectedBook]);
@@ -231,10 +231,10 @@ export default function BibleReader() {
           </Button>
           <div className="flex flex-col">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1">
-                {bibles.find(b => b.id === selectedBible)?.abbreviation || 'BIBLE'}
+                {bibles?.find(b => b.id === selectedBible)?.abbreviation || 'BIBLE'}
             </span>
             <h2 className="text-sm font-bold text-white truncate max-w-[120px]">
-              {books.find(b => b.id === selectedBook)?.name} {selectedChapter.split('.').pop()}
+              {books?.find(b => b.id === selectedBook)?.name} {selectedChapter?.split('.').pop()}
             </h2>
           </div>
         </div>
@@ -277,22 +277,22 @@ export default function BibleReader() {
             <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
                 <h3 className="text-5xl font-black italic tracking-tighter mb-12 text-white">Soul Journal</h3>
                 <div className="grid gap-6">
-                    {highlights.map((h: any) => (
-                        <div key={h.id} className="p-8 rounded-[2.5rem] bg-white/5 border border-white/5 group hover:border-white/10 transition-all">
+                    {highlights?.map((h: any) => (
+                        <div key={h?.id} className="p-8 rounded-[2.5rem] bg-white/5 border border-white/5 group hover:border-white/10 transition-all">
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h.color }} />
-                                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">{h.verse_ref}</span>
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: h?.color }} />
+                                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">{h?.verse_ref}</span>
                             </div>
-                            <p className="text-lg italic opacity-80 leading-relaxed">"{h.content}"</p>
+                            <p className="text-lg italic opacity-80 leading-relaxed">"{h?.content}"</p>
                         </div>
                     ))}
-                    {prayers.map((p: any) => (
-                        <div key={p.id} className="p-8 rounded-[2.5rem] bg-red-500/5 border border-red-500/10">
+                    {prayers?.map((p: any) => (
+                        <div key={p?.id} className="p-8 rounded-[2.5rem] bg-red-500/5 border border-red-500/10">
                              <div className="flex items-center gap-3 mb-4">
                                 <Hand size={14} className="text-red-500" />
-                                <span className="text-[10px] font-black uppercase text-red-500 tracking-widest">Prayer Note • {p.verse_ref}</span>
+                                <span className="text-[10px] font-black uppercase text-red-500 tracking-widest">Prayer Note • {p?.verse_ref}</span>
                             </div>
-                            <p className="text-stone-300">{p.note}</p>
+                            <p className="text-stone-300">{p?.note}</p>
                         </div>
                     ))}
                 </div>
@@ -366,20 +366,20 @@ export default function BibleReader() {
       {/* --- FOOTER SLOGAN & PAGINATION --- */}
       <footer className="h-20 w-full flex-none flex items-center justify-between px-10 border-t border-white/5 bg-[#050505] z-[100]">
         <Button variant="ghost" onClick={() => {
-            const idx = chapters.findIndex(c => c.id === selectedChapter);
+            const idx = chapters?.findIndex(c => c.id === selectedChapter);
             if (idx > 0) setSelectedChapter(chapters[idx-1].id);
           }} className="text-white opacity-40 hover:opacity-100 transition-opacity">
           <ChevronLeft size={28} />
         </Button>
         <div className="flex flex-col items-center">
             <div className="w-32 h-[2px] bg-white/5 rounded-full mb-3 overflow-hidden">
-                <motion.div animate={{ width: `${chapters.length > 0 ? (chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100 : 0}%` }} className="h-full bg-blue-600" />
+                <motion.div animate={{ width: `${chapters?.length > 0 ? (chapters.findIndex(c => c.id === selectedChapter) + 1) / chapters.length * 100 : 0}%` }} className="h-full bg-blue-600" />
             </div>
             <span className="text-[10px] font-black tracking-[0.5em] opacity-20 uppercase">{APP_SLOGAN}</span>
         </div>
         <Button variant="ghost" onClick={() => {
-            const idx = chapters.findIndex(c => c.id === selectedChapter);
-            if (idx < chapters.length - 1) setSelectedChapter(chapters[idx+1].id);
+            const idx = chapters?.findIndex(c => c.id === selectedChapter);
+            if (idx < (chapters?.length || 0) - 1) setSelectedChapter(chapters[idx+1].id);
           }} className="text-white opacity-40 hover:opacity-100 transition-opacity">
           <ChevronRight size={28} />
         </Button>
@@ -396,9 +396,9 @@ export default function BibleReader() {
                     <button onClick={() => setShowNav(false)}><X size={32}/></button>
                 </div>
                 <div className="space-y-1 overflow-y-auto custom-scroll pr-4">
-                    {books.map((b: any) => (
-                        <button key={b.id} onClick={() => { setSelectedBook(b.id); setShowNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBook === b.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
-                            {b.name}
+                    {books?.map((b: any) => (
+                        <button key={b?.id} onClick={() => { setSelectedBook(b?.id); setShowNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBook === b?.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
+                            {b?.name}
                         </button>
                     ))}
                 </div>
@@ -419,10 +419,10 @@ export default function BibleReader() {
                         <button onClick={() => setShowSettings(false)}><X/></button>
                     </div>
                     <div className="grid grid-cols-3 gap-6 mb-12">
-                        {FONT_SIZES.map(f => (
-                            <button key={f.id} onClick={() => setFontSize(f.id)} className={`p-6 rounded-[2rem] border transition-all ${fontSize === f.id ? 'bg-blue-600 border-blue-500' : 'bg-white/5 border-transparent opacity-40 hover:opacity-100'}`}>
-                                <span className={`font-black ${f.size === 'text-base' ? 'text-sm' : f.size === 'text-lg' ? 'text-lg' : 'text-2xl'}`}>Aa</span>
-                                <p className="text-[9px] font-black uppercase mt-2">{f.label}</p>
+                        {FONT_SIZES?.map(f => (
+                            <button key={f?.id} onClick={() => setFontSize(f?.id)} className={`p-6 rounded-[2rem] border transition-all ${fontSize === f?.id ? 'bg-blue-600 border-blue-500' : 'bg-white/5 border-transparent opacity-40 hover:opacity-100'}`}>
+                                <span className={`font-black ${f?.size === 'text-base' ? 'text-sm' : f?.size === 'text-lg' ? 'text-lg' : 'text-2xl'}`}>Aa</span>
+                                <p className="text-[9px] font-black uppercase mt-2">{f?.label}</p>
                             </button>
                         ))}
                     </div>
