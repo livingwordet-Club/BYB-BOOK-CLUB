@@ -283,11 +283,7 @@ async function startServer() {
         return res.status(404).send('Not found');
       }
       // Send index.html for everything else (SPA routing)
-      res.sendFile(path.join(distPath, "index.html"), (err) => {
-        if (err) {
-          res.status(500).send(err);
-        }
-      });
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
   
