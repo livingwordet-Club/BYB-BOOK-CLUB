@@ -262,25 +262,40 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 });
 
 // --- SERVER START ---
+// Line 268
 async function startServer() {
   await initDb();
+  
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
+    // Use the directory where server.js lives (which is /dist)
     const distPath = path.resolve(__dirname);
+    
+    // Explicitly serve static assets first
     app.use(express.static(distPath));
+    
+    // Catch-all must specifically handle the index.html delivery
     app.get("*", (req, res) => {
-      if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return;
-      res.sendFile(path.join(distPath, "index.html"));
+      // If it's an API or Upload call that reached here, it's a real 404
+      if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+        return res.status(404).send('Not found');
+      }
+      // Send index.html for everything else (SPA routing)
+      res.sendFile(path.join(distPath, "index.html"), (err) => {
+        if (err) {
+          res.status(500).send(err);
+        }
+      });
     });
   }
+  
   const PORT = process.env.PORT || 10000;
   app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server live on port ${PORT}`);
   });
 }
-
 // --- BIBLE API PROXY ROUTES ---
 const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 
