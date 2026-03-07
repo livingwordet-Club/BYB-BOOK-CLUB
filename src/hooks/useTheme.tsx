@@ -1,20 +1,31 @@
 import { useState, useEffect } from 'react';
 
 export function useTheme() {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+  const [themeColor, setThemeColor] = useState<string>(() => {
+    return localStorage.getItem('themeColor') || 'emerald';
+  });
+
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     const stored = localStorage.getItem('theme');
-    if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    if (stored === 'light') return false;
+    if (stored === 'dark') return true;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
-    root.classList.add(theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    root.classList.add(isDarkMode ? 'dark' : 'light');
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
-  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  useEffect(() => {
+    localStorage.setItem('themeColor', themeColor);
+    // You could apply this to a CSS variable if needed
+    document.documentElement.style.setProperty('--primary-color', themeColor);
+  }, [themeColor]);
 
-  return { theme, toggleTheme };
+  const toggleDarkMode = () => setIsDarkMode(prev => !prev);
+
+  return { themeColor, setThemeColor, isDarkMode, toggleDarkMode };
 }
