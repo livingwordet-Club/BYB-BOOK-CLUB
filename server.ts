@@ -147,6 +147,23 @@ async function initDb() {
         note TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        target_type VARCHAR(50) NOT NULL, -- 'bible', 'book'
+        target_id TEXT NOT NULL, -- verse ref or book id
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS quotes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        author TEXT,
+        source TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     console.log('Database tables initialized');
@@ -215,6 +232,25 @@ const logActivity = async (userId: number, type: string, targetId?: number, desc
 // --- API ROUTES ---
 
 // Auth
+app.delete('/api/user/delete', authenticateToken, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    res.json({ message: 'Account deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+app.post('/api/user/profile-pic', authenticateToken, upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const url = `/uploads/${req.file.filename}`;
+  try {
+    await pool.query('UPDATE users SET profile_pic = $1 WHERE id = $2', [url, req.user.id]);
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile picture' });
+  }
+});
 app.post('/api/auth/register', async (req, res) => {
   const { username, password, email } = req.body;
   try {
@@ -473,6 +509,33 @@ app.post('/api/prayers', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to save prayer' });
   }
 });
+app.post('/api/bookmarks', authenticateToken, async (req, res) => {
+  const { targetType, targetId, description } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO bookmarks (user_id, target_type, target_id, description) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.user.id, targetType, targetId, description]
+    );
+    await logActivity(req.user.id, 'bookmark', result.rows[0].id, `Bookmarked ${description || targetId}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save bookmark' });
+  }
+});
+
+app.post('/api/quotes', authenticateToken, async (req, res) => {
+  const { content, author, source } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO quotes (user_id, content, author, source) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.user.id, content, author, source]
+    );
+    await logActivity(req.user.id, 'quote', result.rows[0].id, `Saved a quote from ${source}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save quote' });
+  }
+});
 
 app.get('/api/bible/verse', async (req, res) => {
   const { reference } = req.query;
@@ -570,15 +633,15 @@ app.post('/api/posts/:id/comments', authenticateToken, async (req, res) => {
 });
 
 // Activity
-app.get('/api/activities', authenticateToken, async (req, res) => {
+app.get(['/api/activities', '/api/activity'], authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT a.*, u.username, u.name, u.profile_pic
+      SELECT a.*, a.action_type as type, u.username, u.name, u.profile_pic
       FROM activities a
       JOIN users u ON a.user_id = u.id
       WHERE a.user_id = $1 OR a.user_id IN (SELECT id FROM users LIMIT 10) -- Show some global activity too
       ORDER BY a.created_at DESC
-      LIMIT 20
+      LIMIT 50
     `, [req.user.id]);
     res.json(result.rows);
   } catch (err) {
