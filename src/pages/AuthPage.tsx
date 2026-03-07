@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button, Input, Card } from '../components/UI';
-import { BookOpen, LogIn, UserPlus } from 'lucide-react';
+import { BookOpen, LogIn, UserPlus, Key } from 'lucide-react';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,37 +21,43 @@ export default function AuthPage() {
   }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
-  
-  // Cleaned up: only Login or Register
-  const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-  const body = isLogin ? { username, password } : { username, password, email };
-
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    e.preventDefault();
+    setError('');
     
-    const data = await res.json();
+    const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+    const body = isLogin ? { username, password } : { username, password, email };
 
-    if (res.ok) {
-      if (isLogin) {
-        login(data.token, data.user);
-        navigate('/dashboard');
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await res.json();
       } else {
-        setIsLogin(true);
-        alert('Registration successful! Please login.');
+        const text = await res.text();
+        throw new Error(text || 'Server error');
       }
-    } else {
-      setError(data.error || 'Something went wrong');
+
+      if (res.ok) {
+        if (isLogin) {
+          login(data.token, data.user);
+          navigate('/dashboard');
+        } else {
+          setIsLogin(true);
+          alert('Registration successful! Please login.');
+        }
+      } else {
+        setError(data.error || 'Something went wrong');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to connect to server');
     }
-  } catch (err: any) {
-    setError('Failed to connect to server');
-  }
-};
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -128,7 +134,7 @@ export default function AuthPage() {
                 </Button>
               </form>
 
-              <div className="mt-6 text-center">
+              <div className="mt-6 space-y-2 text-center">
                 <button 
                   onClick={() => setIsLogin(!isLogin)}
                   className="text-sm text-primary-600 hover:underline block w-full dark:text-primary-400"
