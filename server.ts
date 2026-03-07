@@ -262,8 +262,7 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 });
 
 // Line 268: Start of Server Logic
-// Line 268
-// Line 268 in server.ts
+// Line 268: Start of Server Logic
 async function startServer() {
   await initDb();
   
@@ -271,26 +270,31 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // Force the server to treat the 'dist' folder as the root
     const distPath = path.resolve(process.cwd(), 'dist');
-    
-    // Serve static files with a fallback to index.html for React Router
+    const assetsPath = path.resolve(distPath, 'assets');
+
+    // 1. Explicitly serve assets with correct MIME types
+    app.use('/assets', express.static(assetsPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
+          res.setHeader('Content-Type', 'application/javascript');
+        } else if (filePath.endsWith('.css')) {
+          res.setHeader('Content-Type', 'text/css');
+        }
+      }
+    }));
+
+    // 2. Serve general static files
     app.use(express.static(distPath));
 
+    // 3. SPA Routing
     app.get("*", (req, res) => {
-      // Don't serve HTML for API or asset requests
       if (req.path.startsWith('/api') || req.path.includes('.')) {
         return res.status(404).send("Not found");
       }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  const PORT = process.env.PORT || 10000;
-  app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`Server live on port ${PORT}`);
-  });
-}
 
   const PORT = process.env.PORT || 10000;
   app.listen(Number(PORT), "0.0.0.0", () => {
@@ -312,5 +316,5 @@ app.get("/api/bible/versions", authenticateToken, async (req, res) => {
   }
 });
 
-// SINGLE ENTRY POINT
+// Final execution call
 startServer();
