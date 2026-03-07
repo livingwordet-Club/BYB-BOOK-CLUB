@@ -188,28 +188,6 @@ app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
   }
 });
 
-// Line 189: Production Static File & SPA Routing Logic
-} else {
-  // 1. Resolve the absolute path to the frontend build directory
-  const distPath = path.resolve(__dirname, "dist");
-  
-  // 2. Serve static files (js, css, images) from the dist folder
-  app.use(express.static(distPath));
-  
-  // 3. Serve uploaded files so they are accessible in production
-  app.use('/uploads', express.static(uploadDir));
-
-  // 4. THE FIX: Catch-all route to serve index.html for Single Page Application (SPA) routing
-  app.get("*", (req, res) => {
-    // Prevent the catch-all from intercepting API or Upload requests
-    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
-      return res.status(404).json({ error: "Not Found" });
-    }
-    // Resolve and send the index.html file
-    res.sendFile(path.join(distPath, "index.html"));
-  });
-}
-
 // --- BOOK ROUTES ---
 app.get("/api/books", authenticateToken, async (req, res) => {
   try {
