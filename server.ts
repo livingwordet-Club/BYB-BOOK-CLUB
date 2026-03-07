@@ -262,24 +262,22 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 });
 
 // Line 268: Start of Server Logic
+// Line 268
 async function startServer() {
   await initDb();
   
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({ 
+      server: { middlewareMode: true }, 
+      appType: "spa" 
+    });
     app.use(vite.middlewares);
-  // Line 272
-  // Line 272
-  // Line 272
   } else {
-    const rootPath = process.cwd();
-    const distPath = path.join(rootPath, 'dist');
-    const assetsPath = path.join(distPath, 'assets');
+    const distPath = path.resolve(process.cwd(), 'dist');
+    const assetsPath = path.resolve(distPath, 'assets');
 
-    // 1. Force the correct MIME type for the assets folder
+    // 1. FORCE CORRECT MIME TYPES FOR JS AND CSS
     app.use('/assets', express.static(assetsPath, {
-      immutable: true,
-      maxAge: '1y',
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
           res.setHeader('Content-Type', 'application/javascript');
@@ -289,27 +287,33 @@ async function startServer() {
       }
     }));
 
-    // 2. Serve the rest of the dist folder
+    // 2. SERVE THE REST OF THE DIST FOLDER
     app.use(express.static(distPath));
 
-    // 3. Handle SPA routing
+    // 3. SPA ROUTING GUARD
     app.get("*", (req, res) => {
+      // Don't intercept API calls
       if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: "API not found" });
+        return res.status(404).json({ error: "API route not found" });
       }
 
-      // If it's a file request that reached here, it's missing
+      // If a file (.js, .png, .css) wasn't found by express.static, stop here
       if (req.path.includes('.')) {
         return res.status(404).send("File not found");
       }
 
-      const indexPath = path.join(distPath, "index.html");
-      res.sendFile(indexPath);
+      // Send the entry point
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
+  const PORT = process.env.PORT || 10000;
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`Server live on port ${PORT}`);
+  });
+}
+
 // --- BIBLE API PROXY ROUTES ---
-// Line 307: Only declare this ONCE
 const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 
 app.get("/api/bible/versions", authenticateToken, async (req, res) => {
@@ -323,5 +327,5 @@ app.get("/api/bible/versions", authenticateToken, async (req, res) => {
   }
 });
 
-// Line 321: Only call this ONCE
+// START THE ENGINE
 startServer();
