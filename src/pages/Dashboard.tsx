@@ -38,7 +38,8 @@ export default function Dashboard() {
     return () => clearTimeout(timer);
   }, [token, logout]);
 
-  if (!data) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  // Line 41: Safety check to prevent rendering with null data
+  if (!data) return <div className="flex items-center justify-center h-screen bg-[#050505] text-white">Loading Dashboard...</div>;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -76,7 +77,8 @@ export default function Dashboard() {
               <Button variant="ghost" size="sm">View All</Button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {data.trending.map((book: any) => (
+              {/* Line 83: Added optional chaining */}
+              {data?.trending?.map((book: any) => (
                 <Card key={book.id} className="group cursor-pointer border-primary-800 hover:border-primary-600 transition-all">
                   <div className="flex gap-4">
                     <img 
@@ -103,7 +105,8 @@ export default function Dashboard() {
               <Clock className="text-primary-400" /> New Updates
             </h2>
             <div className="space-y-4">
-              {data.updates.map((book: any) => (
+              {/* Line 110: Added optional chaining */}
+              {data?.updates?.map((book: any) => (
                 <Card key={book.id} onClick={() => navigate('/books')} className="flex items-center justify-between hover:bg-primary-900/50 cursor-pointer border-primary-800">
                   <div className="flex items-center gap-4">
                     <div className="p-2 bg-primary-800 rounded-lg">
@@ -123,7 +126,7 @@ export default function Dashboard() {
 
         {/* Sidebar */}
         <div className="space-y-8">
-          {data.currentRead && (
+          {data?.currentRead && (
             <Card className="bg-primary-950 text-white border-none shadow-xl">
               <h3 className="text-primary-500 text-sm font-bold uppercase tracking-wider mb-4">Currently Reading</h3>
               <div className="flex gap-4">
@@ -142,7 +145,8 @@ export default function Dashboard() {
               <Heart className="w-5 h-5 text-red-400" /> Spiritual Journey
             </h3>
             <div className="space-y-4">
-              {data.activities && data.activities.length > 0 ? (
+              {/* Line 149: Added optional chaining */}
+              {data?.activities && data.activities.length > 0 ? (
                 data.activities.map((act: any) => (
                   <div key={act.id} className="p-3 bg-primary-800/30 rounded-xl border border-primary-700/50">
                     <div className="flex items-center justify-between mb-1">
@@ -164,7 +168,8 @@ export default function Dashboard() {
               <MessageCircle className="w-5 h-5 text-primary-400" /> Messages
             </h3>
             <div className="space-y-4">
-              {data.recentMessages && data.recentMessages.length > 0 ? (
+              {/* Line 173: Added optional chaining */}
+              {data?.recentMessages && data.recentMessages.length > 0 ? (
                 data.recentMessages.map((msg: any) => (
                   <div 
                     key={msg.id} 
@@ -191,7 +196,8 @@ export default function Dashboard() {
               <UserPlus className="w-5 h-5 text-primary-400" /> Friend Suggestions
             </h3>
             <div className="space-y-4">
-              {data.suggestions.map((s: any) => (
+              {/* Line 202: Added optional chaining to prevent the map crash */}
+              {data?.suggestions?.map((s: any) => (
                 <div key={s.id} className="flex items-center justify-between">
                   <div 
                     className="flex items-center gap-3 cursor-pointer group"
