@@ -31,7 +31,7 @@ function Navbar() {
     { to: '/profile', label: 'Profile', icon: User },
   ];
 
-  if (user.isAdmin) {
+  if (user?.isAdmin) {
     links.push({ to: '/admin', label: 'Admin', icon: Shield });
   }
 
@@ -50,7 +50,8 @@ function Navbar() {
 
           {/* Desktop Menu */}
           <div className="hidden md:flex items-center space-x-4">
-            {links.map(link => (
+            {/* FIX: Added ?. to map */}
+            {links?.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
@@ -125,20 +126,25 @@ function Navbar() {
 
 // Line 112
 // Line 112
+f// Line 112: Hardened PrivateRoute
 function PrivateRoute({ children, adminOnly = false }: { children: React.ReactNode, adminOnly?: boolean }) {
   const { user, isLoading } = useAuth();
   
-  // Line 115: IMPORTANT - You must wait for loading to finish
+  // Force a visible loading state so the screen isn't just black
   if (isLoading) {
-    return <div className="flex items-center justify-center h-screen bg-[#050505] text-white">Loading...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mb-4"></div>
+        <p className="text-xl font-medium">Loading BYB Book Club...</p>
+      </div>
+    );
   }
 
-  // Line 119: Only redirect once isLoading is FALSE and user is still NULL
   if (!user) {
     return <Navigate to="/" replace />;
   }
 
-  if (adminOnly && !user.isAdmin) {
+  if (adminOnly && !user?.isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
   
