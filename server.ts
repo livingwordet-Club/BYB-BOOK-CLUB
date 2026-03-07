@@ -270,28 +270,32 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // THIS IS THE FIX: Point to the root dist folder
-    const distPath = path.join(process.cwd(), 'dist');
+    // 1. Get the ROOT folder where 'dist' lives
+    const rootPath = process.cwd();
+    const distPath = path.join(rootPath, 'dist');
     
-    // Line 278: Serve the actual JS/CSS files
+    // 2. LOG THE PATHS (Check your Render logs for these!)
+    console.log("Root Path:", rootPath);
+    console.log("Dist Path:", distPath);
+
+    // 3. Serve EVERYTHING in the dist folder (including the assets folder)
     app.use(express.static(distPath));
 
-    // Line 281: Handle the "Blackout" by preventing HTML-as-JS errors
+    // 4. Handle SPA routing
     app.get("*", (req, res) => {
-      // If the browser asks for a file (like index.js) and it's missing, send 404
-      if (req.path.includes('.') || req.path.startsWith('/api')) {
-        return res.status(404).send('File Not Found');
+      // API Guard: If it starts with /api, it's not a file
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: "API not found" });
       }
 
-      // Line 287: Send the index.html for page navigation
-      const indexPath = path.join(distPath, "index.html");
-      
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        // This will tell us EXACTLY where the file is missing in your logs
-        res.status(500).send(`Deployment Error: index.html missing at ${indexPath}`);
+      // File Guard: If the path has a dot (like .js or .css), 
+      // but express.static didn't find it, send a real 404.
+      if (req.path.includes('.')) {
+        return res.status(404).send(`File not found: ${req.path}`);
       }
+
+      // 5. Send the index.html for everything else
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
@@ -300,6 +304,23 @@ async function startServer() {
     console.log(`Server live on port ${PORT}`);
   });
 }
+
+// --- BIBLE API PROXY ROUTES ---
+const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
+
+app.get("/api/bible/versions", authenticateToken, async (req, res) => {
+  try {
+    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch Bible versions" });
+  }
+});
+
+// Line 315
+startServer();
 // --- BIBLE API PROXY ROUTES ---
 const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 
