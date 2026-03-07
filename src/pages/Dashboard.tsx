@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button, Card } from '../components/UI';
-import { BookOpen, Users, TrendingUp, MessageSquare, UserPlus, Heart } from 'lucide-react';
-import { motion } from 'motion/react';
+import { BookOpen, Users, TrendingUp, MessageSquare, UserPlus, Heart, ChevronRight, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface Stats {
   totalUsers: number;
@@ -31,6 +32,7 @@ interface Activity {
 
 export default function Dashboard() {
   const { token, user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [trendingBooks, setTrendingBooks] = useState<any[]>([]);
@@ -38,6 +40,12 @@ export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [activityStats, setActivityStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showDailyVerse, setShowDailyVerse] = useState(false);
+
+  const dailyVerse = {
+    ref: "Philippians 4:13",
+    text: "I can do all things through Christ who strengthens me."
+  };
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -82,10 +90,20 @@ export default function Dashboard() {
           <p className="text-primary-600 dark:text-primary-400 font-medium">Your Spiritual Book Library</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" size="sm" className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex items-center gap-2"
+            onClick={() => setShowDailyVerse(true)}
+          >
             <Heart size={18} /> Daily Verse
           </Button>
-          <Button variant="primary" size="sm" className="flex items-center gap-2">
+          <Button 
+            variant="primary" 
+            size="sm" 
+            className="flex items-center gap-2"
+            onClick={() => navigate('/bible')}
+          >
             <BookOpen size={18} /> Start Reading
           </Button>
         </div>
@@ -108,25 +126,29 @@ export default function Dashboard() {
             </h2>
             <Card className="p-6">
               <div className="flex items-end gap-2 h-32">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-                  const dayData = activityStats[i] || { count: 0 };
+                {activityStats.map((dayData, i) => {
                   const height = Math.min(100, (dayData.count / 10) * 100);
                   return (
-                    <div key={day} className="flex-1 flex flex-col items-center gap-2">
+                    <div key={dayData.day} className="flex-1 flex flex-col items-center gap-2">
                       <div className="w-full bg-primary-100 rounded-t-lg relative group dark:bg-primary-800" style={{ height: '100%' }}>
                         <motion.div 
                           initial={{ height: 0 }}
                           animate={{ height: `${height}%` }}
                           className="absolute bottom-0 left-0 right-0 bg-primary-600 rounded-t-lg"
                         />
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-primary-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-primary-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
                           {dayData.count} actions
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold text-primary-400 uppercase">{day}</span>
+                      <span className="text-[10px] font-bold text-primary-400 uppercase">{dayData.day}</span>
                     </div>
                   );
                 })}
+                {activityStats.length === 0 && (
+                  <div className="w-full h-full flex items-center justify-center text-primary-400 italic text-sm">
+                    No activity data available
+                  </div>
+                )}
               </div>
             </Card>
           </section>
@@ -137,7 +159,11 @@ export default function Dashboard() {
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {trendingBooks.map((book) => (
-                <Card key={book.id} className="flex gap-4 p-4 hover:shadow-md transition-shadow cursor-pointer">
+                <Card 
+                  key={book.id} 
+                  className="flex gap-4 p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => navigate('/library', { state: { selectedBookId: book.id } })}
+                >
                   <div className="w-20 h-28 bg-primary-100 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-primary-400 dark:bg-primary-800">
                     {book.cover_url ? (
                       <img src={book.cover_url} alt={book.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -167,14 +193,18 @@ export default function Dashboard() {
             <Card className="p-0 overflow-hidden">
               <div className="p-4 border-b border-primary-50 dark:border-primary-800 flex items-center justify-between">
                 <span className="text-sm font-medium text-primary-600 dark:text-primary-400">Latest conversations</span>
-                <Button variant="ghost" size="sm" className="text-xs">View All</Button>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('/messages')}>View All</Button>
               </div>
               <div className="divide-y divide-primary-50 dark:divide-primary-800">
                 {recentMessages.map((msg) => (
-                  <div key={msg.id} className="p-4 flex items-center gap-4 hover:bg-primary-50 transition-colors dark:hover:bg-primary-900/50">
-                    <div className="w-10 h-10 rounded-full bg-primary-200 flex items-center justify-center text-primary-700 font-bold dark:bg-primary-700 dark:text-primary-200">
+                  <div 
+                    key={msg.id} 
+                    className="p-4 flex items-center gap-4 hover:bg-primary-50 transition-colors cursor-pointer dark:hover:bg-primary-900/50"
+                    onClick={() => navigate('/messages', { state: { selectedUserId: msg.sender_id } })}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary-200 flex items-center justify-center text-primary-700 font-bold dark:bg-primary-700 dark:text-primary-200 overflow-hidden">
                       {msg.sender_pic ? (
-                        <img src={msg.sender_pic} alt={msg.sender_username} className="w-full h-full rounded-full object-cover" />
+                        <img src={msg.sender_pic} alt={msg.sender_username} className="w-full h-full object-cover" />
                       ) : (
                         msg.sender_name ? msg.sender_name[0] : msg.sender_username[0]
                       )}
@@ -205,10 +235,14 @@ export default function Dashboard() {
             <Card className="p-0 overflow-hidden">
               <div className="divide-y divide-primary-50 dark:divide-primary-800">
                 {activities.map((activity) => (
-                  <div key={activity.id} className="p-4 flex gap-3 hover:bg-primary-50 transition-colors dark:hover:bg-primary-900/50">
-                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold text-xs flex-shrink-0 dark:bg-primary-800">
+                  <div 
+                    key={activity.id} 
+                    className="p-4 flex gap-3 hover:bg-primary-50 transition-colors cursor-pointer dark:hover:bg-primary-900/50"
+                    onClick={() => navigate('/profile', { state: { selectedFriend: activity } })}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold text-xs flex-shrink-0 dark:bg-primary-800 overflow-hidden">
                       {activity.profile_pic ? (
-                        <img src={activity.profile_pic} alt={activity.username} className="w-full h-full rounded-full object-cover" />
+                        <img src={activity.profile_pic} alt={activity.username} className="w-full h-full object-cover" />
                       ) : (
                         activity.username[0]
                       )}
@@ -237,16 +271,30 @@ export default function Dashboard() {
             <Card className="space-y-4">
               {suggestions.map((s) => (
                 <div key={s.id} className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold dark:bg-primary-800 dark:text-primary-300">
-                      {s.name ? s.name[0] : s.username[0]}
+                  <div 
+                    className="flex items-center gap-3 cursor-pointer group"
+                    onClick={() => navigate('/profile', { state: { selectedFriend: s } })}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold dark:bg-primary-800 dark:text-primary-300 overflow-hidden">
+                      {s.profile_pic ? (
+                        <img src={s.profile_pic} alt={s.username} className="w-full h-full object-cover" />
+                      ) : (
+                        s.name ? s.name[0] : s.username[0]
+                      )}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-primary-900 dark:text-primary-50">{s.name || s.username}</h4>
+                      <h4 className="text-sm font-bold text-primary-900 dark:text-primary-50 group-hover:text-primary-600 transition-colors">{s.name || s.username}</h4>
                       <p className="text-[10px] text-primary-500 dark:text-primary-400">Active Reader</p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="px-3 py-1 text-xs">Follow</Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="px-3 py-1 text-xs"
+                    onClick={() => navigate('/messages', { state: { selectedUserId: s.id } })}
+                  >
+                    Message
+                  </Button>
                 </div>
               ))}
               {suggestions.length === 0 && (
@@ -256,6 +304,44 @@ export default function Dashboard() {
           </section>
         </div>
       </div>
+      <AnimatePresence>
+        {showDailyVerse && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-primary-950/80 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-primary-900 w-full max-w-md rounded-3xl shadow-2xl p-8 text-center relative"
+            >
+              <button 
+                onClick={() => setShowDailyVerse(false)}
+                className="absolute top-4 right-4 text-primary-400 hover:text-primary-600 dark:hover:text-primary-200"
+              >
+                <X size={24} />
+              </button>
+              <div className="w-16 h-16 bg-primary-100 dark:bg-primary-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Heart className="text-primary-600 dark:text-primary-400" size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-primary-900 dark:text-primary-50 mb-4 italic">"{dailyVerse.text}"</h3>
+              <p className="text-primary-600 dark:text-primary-400 font-bold uppercase tracking-widest text-sm">— {dailyVerse.ref}</p>
+              <Button 
+                className="mt-8 w-full" 
+                onClick={() => {
+                  setShowDailyVerse(false);
+                  navigate('/bible');
+                }}
+              >
+                Read in Context
+              </Button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
