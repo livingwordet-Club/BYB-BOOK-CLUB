@@ -273,7 +273,7 @@ async function startServer() {
   } else {
     // Correctly resolve paths relative to the project root
     // Since server.js is in 'dist', the static files are in the same folder
-    const distPath = path.resolve(__dirname);
+    const distPath = path.resolve(__dirname, 'client');
     
     // Line 278: Serve static files (js, css, images)
     app.use(express.static(distPath));
