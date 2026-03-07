@@ -1,4 +1,5 @@
 {
   "name": "BYB MKC Spiritual Library",
   "description": "A modern spiritual book library and Bible reader for the BYB MKC community with real-time features and admin controls.",
+  "requestFramePermissions": []
 }

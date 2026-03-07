@@ -1,69 +1,72 @@
-// Line 1
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import path from "path";
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
+import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'pg';
-const { Pool } = pkg;
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import axios from "axios";
-import multer from "multer";
-import fs from "fs";
-import dotenv from "dotenv";
+import pg from 'pg';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { Server } from 'socket.io';
+import http from 'http';
 
-// Line 15: Load environment variables
 dotenv.config();
+
+// Extend Express Request type
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any;
+    }
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const JWT_SECRET = process.env.JWT_SECRET || "72f2f2add23560722469e10034482923";
-const BIBLE_API_KEY = process.env.BIBLE_API_KEY;
-
-// Line 22: Supabase Pool Connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false // Crucial for Supabase + Render production
-  }
-});
 
 const app = express();
-app.use(express.json());
-
-// --- PRE-START: Folder Management ---
-const rootDir = path.join(__dirname, "..");
-const uploadDir = path.join(rootDir, "uploads");
-
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// --- MULTER CONFIG FOR PROFILE PICS ---
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req: any, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, `profile-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
   }
 });
 
-const upload = multer({ storage });
+const PORT = 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-// --- DATABASE INIT ---
+// Database Setup
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Multer for book uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+});
+const upload = multer({ storage });
+const bookUpload = upload.fields([
+  { name: 'bookFile', maxCount: 1 },
+  { name: 'cover', maxCount: 1 }
+]);
+
+// Database Initialization
 async function initDb() {
   try {
-    const client = await pool.connect();
-    console.log("Successfully connected to Supabase PostgreSQL");
-    
-    await client.query(`
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        email TEXT,
+        email TEXT UNIQUE,
         name TEXT,
         bio TEXT,
         profile_verse TEXT,
@@ -71,250 +74,573 @@ async function initDb() {
         is_admin BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    
-    await client.query(`
+
       CREATE TABLE IF NOT EXISTS books (
         id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
-        author TEXT,
+        author TEXT NOT NULL,
         cover_url TEXT,
         file_url TEXT,
-        category TEXT,
+        category TEXT DEFAULT 'Spiritual',
+        uploaded_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    
-    await client.query(`
+
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,
         sender_id INTEGER REFERENCES users(id),
         receiver_id INTEGER REFERENCES users(id),
         content TEXT NOT NULL,
+        is_read BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    client.release();
+    // Socials & Activity Tables
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT,
+        image_url TEXT,
+        type VARCHAR(50) DEFAULT 'text', -- 'text', 'image', 'verse'
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS likes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, post_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS comments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS activities (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        action_type VARCHAR(50) NOT NULL, -- 'read', 'post', 'comment', 'like', 'join'
+        target_id INTEGER,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS highlights (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        verse_ref TEXT NOT NULL,
+        content TEXT NOT NULL,
+        color TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS prayers (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        verse_ref TEXT,
+        note TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('Database tables initialized');
   } catch (err) {
-    console.error("Database initialization error:", err);
+    console.error('Database initialization failed:', err);
   }
 }
 
-// --- AUTH MIDDLEWARE ---
+initDb();
+
+// Auth Middleware
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.sendStatus(401);
+
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
+    if (err) return res.status(403).json({ error: 'Forbidden' });
     req.user = user;
     next();
   });
 };
 
-// --- AUTH ROUTES ---
-app.post("/api/auth/register", async (req, res) => {
-  const { username, password, email } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
+// Socket.io
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  socket.on('join', (userId) => {
+    socket.join(`user-${userId}`);
+    console.log(`User ${userId} joined their room`);
+  });
+
+  socket.on('send_message', async (data) => {
+    const { senderId, receiverId, content } = data;
+    try {
+      const result = await pool.query(
+        'INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3) RETURNING *',
+        [senderId, receiverId, content]
+      );
+      const newMessage = result.rows[0];
+      io.to(`user-${receiverId}`).emit('receive_message', newMessage);
+      socket.emit('message_sent', newMessage);
+    } catch (err) {
+      console.error('Failed to send message:', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+// --- HELPERS ---
+const logActivity = async (userId: number, type: string, targetId?: number, description?: string) => {
   try {
+    await pool.query(
+      'INSERT INTO activities (user_id, action_type, target_id, description) VALUES ($1, $2, $3, $4)',
+      [userId, type, targetId, description]
+    );
+  } catch (err) {
+    console.error('Failed to log activity:', err);
+  }
+};
+
+// --- API ROUTES ---
+
+// Auth
+app.post('/api/auth/register', async (req, res) => {
+  const { username, password, email } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      "INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id, username, is_admin",
+      'INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id, username, is_admin',
       [username, hashedPassword, email]
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, username: user.username, isAdmin: user.is_admin }, JWT_SECRET);
     res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin } });
-  } catch (error) {
-    res.status(400).json({ error: "Username already exists" });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message.includes('unique') ? 'Username or email already exists' : 'Registration failed' });
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const result = await pool.query("SELECT * FROM users WHERE username = $1", [username]);
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
     const user = result.rows[0];
     if (user && await bcrypt.compare(password, user.password)) {
       const token = jwt.sign({ id: user.id, username: user.username, isAdmin: user.is_admin }, JWT_SECRET);
-      res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin } });
+      res.json({ token, user: { id: user.id, username: user.username, isAdmin: user.is_admin, name: user.name } });
     } else {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: 'Invalid credentials' });
     }
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
+  } catch (err) {
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// --- USER & DASHBOARD ROUTES ---
-app.get("/api/user/profile", authenticateToken, async (req: any, res) => {
+// Dashboard
+app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, username, email, name, bio, profile_verse, profile_pic FROM users WHERE id = $1", [req.user.id]);
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch profile" });
+    const usersCount = await pool.query('SELECT COUNT(*) FROM users');
+    const booksCount = await pool.query('SELECT COUNT(*) FROM books');
+    const suggestions = await pool.query('SELECT id, username, name, profile_pic FROM users WHERE id != $1 LIMIT 5', [req.user.id]);
+    
+    // Real trending books (most recently uploaded for now)
+    const trendingBooks = await pool.query('SELECT * FROM books ORDER BY created_at DESC LIMIT 4');
+    
+    // Activity Tracker Data (Last 7 days count)
+    const activityStats = await pool.query(`
+      SELECT DATE(created_at) as date, COUNT(*) as count
+      FROM activities
+      WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days'
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `, [req.user.id]);
+
+    // Real recent messages
+    const recentMessages = await pool.query(`
+      SELECT m.*, u.username as sender_username, u.name as sender_name, u.profile_pic as sender_pic
+      FROM messages m
+      JOIN users u ON m.sender_id = u.id
+      WHERE m.receiver_id = $1
+      ORDER BY m.created_at DESC
+      LIMIT 5
+    `, [req.user.id]);
+
+    res.json({
+      stats: {
+        totalUsers: parseInt(usersCount.rows[0].count),
+        totalBooks: parseInt(booksCount.rows[0].count),
+        activeReaders: Math.floor(parseInt(usersCount.rows[0].count) * 0.7) // Mock active readers
+      },
+      suggestions: suggestions.rows,
+      trendingBooks: trendingBooks.rows,
+      recentMessages: recentMessages.rows,
+      activityStats: activityStats.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch dashboard' });
   }
 });
 
-app.put("/api/user/profile", authenticateToken, async (req: any, res) => {
+// Books
+app.get('/api/books', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM books ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch books' });
+  }
+});
+
+// Profile
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT name, email, bio, profile_verse, profile_pic FROM users WHERE id = $1', [req.user.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
   const { name, email, bio, profile_verse, profile_pic } = req.body;
   try {
     await pool.query(
-      "UPDATE users SET name = $1, email = $2, bio = $3, profile_verse = $4, profile_pic = $5 WHERE id = $6",
+      'UPDATE users SET name = $1, email = $2, bio = $3, profile_verse = $4, profile_pic = $5 WHERE id = $6',
       [name, email, bio, profile_verse, profile_pic, req.user.id]
     );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to update profile" });
+    res.json({ message: 'Profile updated' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
-app.get("/api/dashboard", authenticateToken, async (req: any, res) => {
+// Admin
+app.get('/api/admin/stats', authenticateToken, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
   try {
-    const userCount = await pool.query("SELECT COUNT(*) FROM users");
-    const bookCount = await pool.query("SELECT COUNT(*) FROM books");
-    const suggestions = await pool.query("SELECT id, username, name, profile_pic FROM users WHERE id != $1 LIMIT 5", [req.user.id]);
-    
-    res.json({
-      stats: {
-        totalUsers: parseInt(userCount.rows[0].count),
-        totalBooks: parseInt(bookCount.rows[0].count),
-        activeReaders: Math.floor(parseInt(userCount.rows[0].count) * 0.7)
-      },
-      suggestions: suggestions.rows
+    const userCount = await pool.query('SELECT COUNT(*) FROM users');
+    const bookCount = await pool.query('SELECT COUNT(*) FROM books');
+    const users = await pool.query('SELECT id, username, name, email, is_admin FROM users ORDER BY id ASC');
+    const recentActivity = await pool.query(`
+      SELECT a.*, u.username 
+      FROM activities a 
+      JOIN users u ON a.user_id = u.id 
+      ORDER BY a.created_at DESC 
+      LIMIT 50
+    `);
+
+    res.json({ 
+      userCount: parseInt(userCount.rows[0].count),
+      bookCount: parseInt(bookCount.rows[0].count),
+      allUsers: users.rows,
+      recentActivity: recentActivity.rows
     });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch dashboard data" });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch admin stats' });
   }
 });
 
-// --- BOOK ROUTES ---
-app.get("/api/books", authenticateToken, async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM books ORDER BY created_at DESC");
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch books" });
-  }
-});
+app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
+  const { title, author, release_year, is_trending, is_new, category } = req.body;
+  
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const bookFile = files['bookFile'] ? `/uploads/${files['bookFile'][0].filename}` : null;
+  const coverFile = files['cover'] ? `/uploads/${files['cover'][0].filename}` : null;
 
-// --- ADMIN ROUTES ---
-app.get("/api/admin/stats", authenticateToken, async (req: any, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: "Unauthorized" });
-  try {
-    const allUsers = await pool.query("SELECT id, username, is_admin FROM users");
-    res.json({ allUsers: allUsers.rows });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch admin stats" });
-  }
-});
+  if (!bookFile) return res.status(400).json({ error: 'Book file is required' });
 
-app.post("/api/admin/upload-book", authenticateToken, upload.single('file'), async (req: any, res) => {
-  if (!req.user.isAdmin) return res.status(403).json({ error: "Unauthorized" });
-  const { title, author, cover_url, category } = req.body;
-  const file_url = req.file ? `/uploads/${req.file.filename}` : null;
-
-  try {
-    await pool.query(
-      "INSERT INTO books (title, author, cover_url, file_url, category) VALUES ($1, $2, $3, $4, $5)",
-      [title, author, cover_url, file_url, category]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to upload book" });
-  }
-});
-
-// --- MESSAGES ---
-app.get("/api/messages", authenticateToken, async (req: any, res) => {
   try {
     const result = await pool.query(
-      "SELECT * FROM messages WHERE sender_id = $1 OR receiver_id = $1 ORDER BY created_at ASC",
-      [req.user.id]
+      'INSERT INTO books (title, author, cover_url, file_url, category, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [title, author, coverFile, bookFile, category || 'Spiritual', req.user.id]
+    );
+    
+    await logActivity(req.user.id, 'upload', result.rows[0].id, `Uploaded a new book: ${title}`);
+    
+    res.json({ message: 'Book uploaded', bookId: result.rows[0].id });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: 'Failed to upload book' });
+  }
+});
+
+// Bible API Proxy
+const BIBLE_API_KEY = 'JT9CAQaoRjmSgdBxcT4tG';
+const BIBLE_BASE_URL = 'https://rest.api.bible/v1';
+
+app.get('/api/bible/versions', authenticateToken, async (req, res) => {
+  try {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    const data = await response.json();
+    res.json(data.data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch Bible versions' });
+  }
+});
+
+app.get('/api/bible/:bibleId/books', authenticateToken, async (req, res) => {
+  try {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    const data = await response.json();
+    res.json(data.data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch books' });
+  }
+});
+
+app.get('/api/bible/:bibleId/books/:bookId/chapters', authenticateToken, async (req, res) => {
+  try {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/books/${req.params.bookId}/chapters`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    const data = await response.json();
+    res.json(data.data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch chapters' });
+  }
+});
+
+app.get('/api/bible/:bibleId/chapters/:chapterId', authenticateToken, async (req, res) => {
+  try {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true&include-verse-spans=true`, {
+      headers: { 'api-key': BIBLE_API_KEY }
+    });
+    const data = await response.json();
+    res.json(data.data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch chapter content' });
+  }
+});
+
+app.get('/api/user/bible-data', authenticateToken, async (req, res) => {
+  try {
+    const highlights = await pool.query('SELECT * FROM highlights WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+    const prayers = await pool.query('SELECT * FROM prayers WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+    res.json({ highlights: highlights.rows, prayers: prayers.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user Bible data' });
+  }
+});
+
+app.post('/api/highlights', authenticateToken, async (req, res) => {
+  const { verseRef, content, color } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO highlights (user_id, verse_ref, content, color) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.user.id, verseRef, content, color]
+    );
+    await logActivity(req.user.id, 'highlight', result.rows[0].id, `Highlighted ${verseRef}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save highlight' });
+  }
+});
+
+app.post('/api/prayers', authenticateToken, async (req, res) => {
+  const { verseRef, note } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO prayers (user_id, verse_ref, note) VALUES ($1, $2, $3) RETURNING *',
+      [req.user.id, verseRef, note]
+    );
+    await logActivity(req.user.id, 'prayer', result.rows[0].id, `Added a prayer note for ${verseRef}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save prayer' });
+  }
+});
+
+app.get('/api/bible/verse', async (req, res) => {
+  const { reference } = req.query;
+  const BIBLE_API_KEY = process.env.BIBLE_API_KEY;
+  if (!BIBLE_API_KEY) return res.status(500).json({ error: 'Bible API key not configured' });
+
+  try {
+    // Example using API.Bible or similar
+    // For now, returning a mock or using a public API if possible
+    // Let's use a public one for the demo if no key is provided
+    const response = await fetch(`https://bible-api.com/${reference}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch verse' });
+  }
+});
+
+// Socials
+app.get('/api/posts', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.*, u.username, u.name, u.profile_pic,
+      (SELECT COUNT(*) FROM likes WHERE post_id = p.id) as likes_count,
+      (SELECT COUNT(*) FROM comments WHERE post_id = p.id) as comments_count,
+      EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $1) as is_liked
+      FROM posts p
+      JOIN users u ON p.user_id = u.id
+      ORDER BY p.created_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+app.post('/api/posts', authenticateToken, async (req, res) => {
+  const { content, image_url, type } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO posts (user_id, content, image_url, type) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.user.id, content, image_url, type]
+    );
+    await logActivity(req.user.id, 'post', result.rows[0].id, `Shared a new ${type}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const exists = await pool.query('SELECT 1 FROM likes WHERE user_id = $1 AND post_id = $2', [req.user.id, id]);
+    if (exists.rows.length > 0) {
+      await pool.query('DELETE FROM likes WHERE user_id = $1 AND post_id = $2', [req.user.id, id]);
+      res.json({ liked: false });
+    } else {
+      await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2)', [req.user.id, id]);
+      await logActivity(req.user.id, 'like', parseInt(id), 'Liked a post');
+      res.json({ liked: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Action failed' });
+  }
+});
+
+app.get('/api/posts/:id/comments', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT c.*, u.username, u.name, u.profile_pic
+      FROM comments c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.post_id = $1
+      ORDER BY c.created_at ASC
+    `, [req.params.id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+app.post('/api/posts/:id/comments', authenticateToken, async (req, res) => {
+  const { content } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO comments (user_id, post_id, content) VALUES ($1, $2, $3) RETURNING *',
+      [req.user.id, req.params.id, content]
+    );
+    await logActivity(req.user.id, 'comment', parseInt(req.params.id), 'Commented on a post');
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// Activity
+app.get('/api/activities', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT a.*, u.username, u.name, u.profile_pic
+      FROM activities a
+      JOIN users u ON a.user_id = u.id
+      WHERE a.user_id = $1 OR a.user_id IN (SELECT id FROM users LIMIT 10) -- Show some global activity too
+      ORDER BY a.created_at DESC
+      LIMIT 20
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch activities' });
+  }
+});
+
+app.post('/api/activities/log', authenticateToken, async (req, res) => {
+  const { type, targetId, description } = req.body;
+  try {
+    await logActivity(req.user.id, type, targetId, description);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to log activity' });
+  }
+});
+
+// Messages
+app.get('/api/messages/:otherUserId', authenticateToken, async (req, res) => {
+  const { otherUserId } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT * FROM messages WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1) ORDER BY created_at ASC',
+      [req.user.id, otherUserId]
     );
     res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch messages" });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 
-app.post("/api/messages", authenticateToken, async (req: any, res) => {
-  const { receiver_id, content } = req.body;
+app.get('/api/conversations', authenticateToken, async (req, res) => {
   try {
-    await pool.query(
-      "INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3)",
-      [req.user.id, receiver_id, content]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to send message" });
+    const result = await pool.query(`
+      SELECT DISTINCT ON (other_id) 
+        u.id as other_id, 
+        u.username, 
+        u.name, 
+        u.profile_pic,
+        m.content as last_message,
+        m.created_at as last_message_time
+      FROM users u
+      JOIN messages m ON (m.sender_id = u.id AND m.receiver_id = $1) OR (m.sender_id = $1 AND m.receiver_id = u.id)
+      WHERE u.id != $1
+      ORDER BY other_id, m.created_at DESC
+    `, [req.user.id]);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
 
-// --- ACCOUNT DELETION ---
-app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
-  try {
-    await pool.query("DELETE FROM users WHERE id = $1", [req.user.id]);
-    res.json({ success: true });
-  } catch (error) { 
-    res.status(500).json({ error: "Failed to delete account" }); 
-  }
-});
-
-// Line 268: Start of Server Logic
-// Line 268: Start of Server Logic
+// Vite Integration
 async function startServer() {
-  await initDb();
-  
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.resolve(process.cwd(), 'dist');
-    const assetsPath = path.resolve(distPath, 'assets');
-
-    // 1. Explicitly serve assets with correct MIME types
-    app.use('/assets', express.static(assetsPath, {
-      setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.js')) {
-          res.setHeader('Content-Type', 'application/javascript');
-        } else if (filePath.endsWith('.css')) {
-          res.setHeader('Content-Type', 'text/css');
-        }
-      }
-    }));
-
-    // 2. Serve general static files
-    app.use(express.static(distPath));
-
-    // 3. SPA Routing
-    app.get("*", (req, res) => {
-      if (req.path.startsWith('/api') || req.path.includes('.')) {
-        return res.status(404).send("Not found");
-      }
-      res.sendFile(path.join(distPath, "index.html"));
+    app.use(express.static(path.join(__dirname, 'dist')));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
   }
 
-  const PORT = process.env.PORT || 10000;
-  app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`Server live on port ${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-// --- BIBLE API PROXY ROUTES ---
-const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
-
-app.get("/api/bible/versions", authenticateToken, async (req, res) => {
-  try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
-      headers: { 'api-key': BIBLE_API_KEY }
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch Bible versions" });
-  }
-});
-
-// Final execution call
 startServer();
