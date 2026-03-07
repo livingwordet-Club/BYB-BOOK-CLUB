@@ -261,8 +261,7 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
   }
 });
 
-// --- SERVER START ---
-// Line 268
+// Line 268: Start of Server Logic
 async function startServer() {
   await initDb();
   
@@ -306,6 +305,7 @@ async function startServer() {
 }
 
 // --- BIBLE API PROXY ROUTES ---
+// Line 307: Only declare this ONCE
 const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
 
 app.get("/api/bible/versions", authenticateToken, async (req, res) => {
@@ -319,20 +319,5 @@ app.get("/api/bible/versions", authenticateToken, async (req, res) => {
   }
 });
 
-// Line 315
-startServer();
-// --- BIBLE API PROXY ROUTES ---
-const BIBLE_BASE_URL = "https://api.scripture.api.bible/v1";
-
-app.get("/api/bible/versions", authenticateToken, async (req, res) => {
-  try {
-    const response = await axios.get(`${BIBLE_BASE_URL}/bibles`, {
-      headers: { 'api-key': BIBLE_API_KEY }
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch Bible versions" });
-  }
-});
-
+// Line 321: Only call this ONCE
 startServer();
