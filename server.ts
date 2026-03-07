@@ -273,10 +273,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // 1. Identify the 'dist' folder at the root level
     const distPath = path.resolve(process.cwd(), 'dist');
     const assetsPath = path.resolve(distPath, 'assets');
 
-    // 1. FORCE CORRECT MIME TYPES FOR JS AND CSS
+    // 2. FORCE correct headers for the assets folder
+    // This stops the "Black Screen" by telling the browser JS is actually JS
     app.use('/assets', express.static(assetsPath, {
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
@@ -287,22 +289,22 @@ async function startServer() {
       }
     }));
 
-    // 2. SERVE THE REST OF THE DIST FOLDER
+    // 3. Serve the general dist folder
     app.use(express.static(distPath));
 
-    // 3. SPA ROUTING GUARD
+    // 4. SPA Routing Guard
     app.get("*", (req, res) => {
-      // Don't intercept API calls
+      // API bypass
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API route not found" });
       }
 
-      // If a file (.js, .png, .css) wasn't found by express.static, stop here
+      // If the browser asks for a file that doesn't exist, don't send index.html
       if (req.path.includes('.')) {
         return res.status(404).send("File not found");
       }
 
-      // Send the entry point
+      // Send the entry point for all other routes
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
@@ -327,5 +329,5 @@ app.get("/api/bible/versions", authenticateToken, async (req, res) => {
   }
 });
 
-// START THE ENGINE
+// SINGLE ENTRY POINT
 startServer();
