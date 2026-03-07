@@ -4,8 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { Card, Button, Input } from '../components/UI';
 import { Book, Search, Filter, Download, ExternalLink, BookOpen, Headphones, Play, Pause, Volume2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface BookData {
   id: number | string;
@@ -22,12 +21,22 @@ interface BookData {
 export default function Library() {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [books, setBooks] = useState<BookData[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [typeFilter, setTypeFilter] = useState<'All' | 'book' | 'audiobook'>('All');
   const [loading, setLoading] = useState(true);
   const [playingAudio, setPlayingAudio] = useState<BookData | null>(null);
+
+  useEffect(() => {
+    if (!loading && books.length > 0 && location.state?.selectedBookId) {
+      const book = books.find(b => b.id === location.state.selectedBookId);
+      if (book) {
+        handleReadBook(book);
+      }
+    }
+  }, [loading, books, location.state]);
 
   const handleReadBook = async (book: BookData) => {
     if (book.type === 'audiobook') {
