@@ -269,35 +269,35 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   // Line 272
+  // Line 272
   } else {
     const rootPath = process.cwd();
     const distPath = path.join(rootPath, 'dist');
     
-    // LOG FOR DEBBUGING
-    console.log("Serving from:", distPath);
-
-    // FIX: Explicitly serve the assets folder first
+    // 1. Tell Express EXACTLY where the assets are
+    // This prevents the "MIME type" error that causes the black screen
     app.use('/assets', express.static(path.join(distPath, 'assets')));
     
-    // Serve the rest of the dist folder
+    // 2. Serve the rest of the dist folder
     app.use(express.static(distPath));
 
+    // 3. Handle SPA routing
     app.get("*", (req, res) => {
       // API Guard
       if (req.path.startsWith('/api')) {
         return res.status(404).json({ error: "API not found" });
       }
 
-      // File Guard: If it's a missing asset, don't send index.html
+      // File Guard: If the browser asks for a file (.js, .css) and it's missing, 
+      // do NOT send index.html. Send a 404 so the browser knows it's actually gone.
       if (req.path.includes('.')) {
         return res.status(404).send("Asset not found");
       }
 
-      // Send the index.html
+      // 4. Send the index.html for all other page routes
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
   const PORT = process.env.PORT || 10000;
   app.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server live on port ${PORT}`);
