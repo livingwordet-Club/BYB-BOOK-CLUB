@@ -263,51 +263,34 @@ app.delete("/api/user/account", authenticateToken, async (req: any, res) => {
 
 // Line 268: Start of Server Logic
 // Line 268
+// Line 268 in server.ts
 async function startServer() {
   await initDb();
   
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ 
-      server: { middlewareMode: true }, 
-      appType: "spa" 
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    // 1. Identify the 'dist' folder at the root level
+    // Force the server to treat the 'dist' folder as the root
     const distPath = path.resolve(process.cwd(), 'dist');
-    const assetsPath = path.resolve(distPath, 'assets');
-
-    // 2. FORCE correct headers for the assets folder
-    // This stops the "Black Screen" by telling the browser JS is actually JS
-    app.use('/assets', express.static(assetsPath, {
-      setHeaders: (res, filePath) => {
-        if (filePath.endsWith('.js')) {
-          res.setHeader('Content-Type', 'application/javascript');
-        } else if (filePath.endsWith('.css')) {
-          res.setHeader('Content-Type', 'text/css');
-        }
-      }
-    }));
-
-    // 3. Serve the general dist folder
+    
+    // Serve static files with a fallback to index.html for React Router
     app.use(express.static(distPath));
 
-    // 4. SPA Routing Guard
     app.get("*", (req, res) => {
-      // API bypass
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({ error: "API route not found" });
+      // Don't serve HTML for API or asset requests
+      if (req.path.startsWith('/api') || req.path.includes('.')) {
+        return res.status(404).send("Not found");
       }
-
-      // If the browser asks for a file that doesn't exist, don't send index.html
-      if (req.path.includes('.')) {
-        return res.status(404).send("File not found");
-      }
-
-      // Send the entry point for all other routes
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  const PORT = process.env.PORT || 10000;
+  app.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`Server live on port ${PORT}`);
+  });
+}
 
   const PORT = process.env.PORT || 10000;
   app.listen(Number(PORT), "0.0.0.0", () => {
