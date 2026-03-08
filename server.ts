@@ -10,6 +10,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { Server } from 'socket.io';
 import http from 'http';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -37,6 +38,11 @@ const io = new Server(server, {
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
+// Supabase Setup
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 // Database Setup
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -46,18 +52,33 @@ const pool = new pg.Pool({
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Multer for book uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'uploads/'),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
-});
+// Multer for memory storage (Supabase uploads)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 const bookUpload = upload.fields([
   { name: 'bookFile', maxCount: 1 },
   { name: 'cover', maxCount: 1 }
 ]);
+
+// Helper to upload to Supabase
+const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
+  const fileName = `${Date.now()}-${file.originalname}`;
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false
+    });
+
+  if (error) throw error;
+
+  const { data: { publicUrl } } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(fileName);
+
+  return publicUrl;
+};
 
 // Database Initialization
 async function initDb() {
@@ -263,11 +284,13 @@ app.delete('/api/user/delete', authenticateToken, async (req, res) => {
 
 app.post('/api/user/profile-pic', authenticateToken, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const url = `/uploads/${req.file.filename}`;
+  
   try {
+    const url = await uploadToSupabase(req.file, 'profiles');
     await pool.query('UPDATE users SET profile_pic = $1 WHERE id = $2', [url, req.user.id]);
     res.json({ url });
   } catch (err) {
+    console.error('Profile pic upload error:', err);
     res.status(500).json({ error: 'Failed to update profile picture' });
   }
 });
@@ -419,14 +442,15 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
   const { title, author, release_year, is_trending, is_new, category } = req.body;
   
   const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
-  if (!files) return res.status(400).json({ error: 'No files uploaded' });
-
-  const bookFile = files['bookFile'] ? `/uploads/${files['bookFile'][0].filename}` : null;
-  const coverFile = files['cover'] ? `/uploads/${files['cover'][0].filename}` : null;
-
-  if (!bookFile) return res.status(400).json({ error: 'Book file is required' });
+  if (!files || !files['bookFile']) return res.status(400).json({ error: 'Book file is required' });
 
   try {
+    const bookFileUrl = await uploadToSupabase(files['bookFile'][0], 'library');
+    let coverFileUrl = null;
+    if (files['cover']) {
+      coverFileUrl = await uploadToSupabase(files['cover'][0], 'library');
+    }
+
     const result = await pool.query(
       'INSERT INTO books (title, author, release_year, is_trending, is_new, cover_url, file_url, category, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
       [
@@ -435,8 +459,8 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
         release_year, 
         is_trending === 'true' || is_trending === true, 
         is_new === 'true' || is_new === true, 
-        coverFile, 
-        bookFile, 
+        coverFileUrl, 
+        bookFileUrl, 
         category || 'Spiritual', 
         req.user.id
       ]
