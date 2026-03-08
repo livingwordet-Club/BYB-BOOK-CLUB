@@ -457,11 +457,12 @@ const BIBLE_BASE_URL = 'https://rest.api.bible/v1';
 
 app.get('/api/bible/versions', authenticateToken, async (req, res) => {
   try {
-    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true`, {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles`, {
       headers: { 'api-key': BIBLE_API_KEY }
     });
     const data = await response.json();
-   // Filter for specific versions requested by user
+    
+    // Filter for specific versions requested by user
     const allowedVersions = ['KJV', 'NKJV', 'AMP', 'ESV', 'NIV', 'NASB', 'NASV', 'Amharic'];
     const filtered = data.data.filter((bible: any) => 
       allowedVersions.includes(bible.abbreviation) || 
@@ -501,7 +502,7 @@ app.get('/api/bible/:bibleId/books/:bookId/chapters', authenticateToken, async (
 
 app.get('/api/bible/:bibleId/chapters/:chapterId', authenticateToken, async (req, res) => {
   try {
-    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true&include-verse-spans=true`, {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true`, {
       headers: { 'api-key': BIBLE_API_KEY }
     });
     const data = await response.json();
@@ -534,6 +535,7 @@ app.post('/api/highlights', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to save highlight' });
   }
 });
+
 app.delete('/api/highlights/:id', authenticateToken, async (req, res) => {
   try {
     await pool.query('DELETE FROM highlights WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
@@ -680,6 +682,7 @@ app.post('/api/posts/:id/comments', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to add comment' });
   }
 });
+
 app.post('/api/notes', authenticateToken, async (req, res) => {
   const { verseRef, content } = req.body;
   try {
