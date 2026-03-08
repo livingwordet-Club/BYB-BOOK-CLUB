@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, X, MessageSquare, BookOpen, 
   ChevronLeft, ChevronRight, Loader2, Bookmark, 
-  Library, Hand, Mic, Save, Search
+  Quote, Heart, Library, Hand, Mic, Save, Search
 } from 'lucide-react';
 import { Button } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
@@ -39,6 +39,8 @@ export default function BibleReader() {
   const [highlights, setHighlights] = useState<any[]>([]);
   const [prayers, setPrayers] = useState<any[]>([]);
   const [bookmarks, setBookmarks] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
 
   // UI State
   const [view, setView] = useState<'reader' | 'journal' | 'audio'>('reader');
@@ -51,7 +53,9 @@ export default function BibleReader() {
   // Functional Pop-up State
   const [activeVerse, setActiveVerse] = useState<{number: string, text: string, x: number, y: number} | null>(null);
   const [showPrayerRecorder, setShowPrayerRecorder] = useState(false);
+  const [showNoteRecorder, setShowNoteRecorder] = useState(false);
   const [prayerNote, setPrayerNote] = useState('');
+  const [verseNote, setVerseNote] = useState('');
 
   // --- API CALLS TO YOUR SERVER ---
   const fetchFromDb = async (endpoint: string, method = 'GET', body?: any) => {
@@ -76,7 +80,7 @@ export default function BibleReader() {
       setLoading(true);
       try {
         const versions = await fetchFromDb('/api/bible/versions');
-        const userData = await fetchFromDb('/api/user/bible-data');
+        const userData = await fetchFromDb('/api/activity'); // Get all activity to populate local state
         
         if (versions && Array.isArray(versions)) {
           setBibles(versions);
@@ -84,9 +88,12 @@ export default function BibleReader() {
             setSelectedBible(versions[0].id);
           }
         }
-        if (userData) {
-            setHighlights(userData.highlights || []);
-            setPrayers(userData.prayers || []);
+        if (userData && Array.isArray(userData)) {
+            setHighlights(userData.filter((a: any) => a.type === 'highlight'));
+            setPrayers(userData.filter((a: any) => a.type === 'prayer'));
+            setBookmarks(userData.filter((a: any) => a.type === 'bookmark'));
+            setQuotes(userData.filter((a: any) => a.type === 'quote'));
+            setNotes(userData.filter((a: any) => a.type === 'note'));
         }
       } catch (err) {
         console.error("Failed to load initial data", err);
@@ -175,7 +182,7 @@ export default function BibleReader() {
     }
   };
 
-   const saveBookmark = async () => {
+  const saveBookmark = async () => {
     if (!activeVerse) return;
     try {
       const newB = await fetchFromDb('/api/bookmarks', 'POST', {
@@ -187,6 +194,37 @@ export default function BibleReader() {
       setActiveVerse(null);
     } catch (err) {
       console.error("Failed to save bookmark", err);
+    }
+  };
+
+  const saveQuote = async () => {
+    if (!activeVerse) return;
+    try {
+      const newQ = await fetchFromDb('/api/quotes', 'POST', {
+        content: activeVerse.text,
+        author: 'Bible',
+        source: `${selectedBook} ${activeVerse.number}`
+      });
+      if (newQ) setQuotes([newQ, ...quotes]);
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save quote", err);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!activeVerse) return;
+    try {
+      const newN = await fetchFromDb('/api/notes', 'POST', {
+        verseRef: `${selectedBook} ${activeVerse.number}`,
+        content: verseNote
+      });
+      if (newN) setNotes([newN, ...notes]);
+      setShowNoteRecorder(false);
+      setVerseNote('');
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save note", err);
     }
   };
 
@@ -310,6 +348,33 @@ export default function BibleReader() {
                             <p className="text-stone-300">{p?.note}</p>
                         </div>
                     ))}
+                    {quotes?.map((q: any) => (
+                        <div key={q?.id} className="p-8 rounded-[2.5rem] bg-purple-500/5 border border-purple-500/10">
+                             <div className="flex items-center gap-3 mb-4">
+                                <Quote size={14} className="text-purple-500" />
+                                <span className="text-[10px] font-black uppercase text-purple-500 tracking-widest">Quote • {q?.source}</span>
+                            </div>
+                            <p className="text-lg italic text-stone-200">"{q?.content}"</p>
+                        </div>
+                    ))}
+                    {bookmarks?.map((b: any) => (
+                        <div key={b?.id} className="p-8 rounded-[2.5rem] bg-blue-500/5 border border-blue-500/10">
+                             <div className="flex items-center gap-3 mb-4">
+                                <Bookmark size={14} className="text-blue-500" />
+                                <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Bookmark • {b?.target_id}</span>
+                            </div>
+                            <p className="text-stone-300">{b?.description}</p>
+                        </div>
+                    ))}
+                    {notes?.map((n: any) => (
+                        <div key={n?.id} className="p-8 rounded-[2.5rem] bg-emerald-500/5 border border-emerald-500/10">
+                             <div className="flex items-center gap-3 mb-4">
+                                <MessageSquare size={14} className="text-emerald-500" />
+                                <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">Note • {n?.verse_ref}</span>
+                            </div>
+                            <p className="text-stone-300">{n?.content}</p>
+                        </div>
+                    ))}
                 </div>
             </div>
           ) : (
@@ -327,7 +392,7 @@ export default function BibleReader() {
               animate={{ opacity: 1, scale: 1, y: 0 }} 
               exit={{ opacity: 0 }}
               style={{ left: `calc(${activeVerse.x}px - 140px)`, top: `${activeVerse.y}px` }}
-              className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[300px]"
+              className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[320px]"
             >
               <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
                 <span className="text-[10px] font-black text-blue-500 uppercase">Verse {activeVerse.number}</span>
@@ -338,12 +403,18 @@ export default function BibleReader() {
                   <button key={c} onClick={() => saveHighlight(c)} className="w-8 h-8 rounded-full hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
                 ))}
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowPrayerRecorder(true)} className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setShowPrayerRecorder(true)} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
                   <Hand size={14} className="text-red-500" /> Prayer
                 </button>
-                <button onClick={saveBookmark} className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                <button onClick={saveBookmark} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
                   <Bookmark size={14} className="text-blue-500" /> Save
+                </button>
+                <button onClick={saveQuote} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                  <Quote size={14} className="text-purple-500" /> Quote
+                </button>
+                <button onClick={() => setShowNoteRecorder(true)} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                  <MessageSquare size={14} className="text-emerald-500" /> Note
                 </button>
               </div>
             </motion.div>
@@ -357,7 +428,7 @@ export default function BibleReader() {
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm">
             <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="bg-stone-900 w-full max-w-md p-10 rounded-[3.5rem] border border-white/10 relative">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-2xl font-black italic">Sacred Note</h3>
+                  <h3 className="text-2xl font-black italic">Sacred Note (Prayer)</h3>
                   <button onClick={() => setShowPrayerRecorder(false)} className="opacity-50 hover:opacity-100 transition-opacity"><X/></button>
                 </div>
                 <div className="bg-white/5 p-6 rounded-[2rem] mb-6 flex flex-col items-center gap-4">
@@ -372,6 +443,33 @@ export default function BibleReader() {
                 </div>
                 <Button onClick={handleSavePrayer} className="w-full bg-blue-600 py-6 rounded-2xl font-black uppercase tracking-widest">
                     <Save size={18} className="mr-2"/> Commit to Heart
+                </Button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- NOTE MODAL --- */}
+      <AnimatePresence>
+        {showNoteRecorder && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/90 backdrop-blur-sm">
+            <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} className="bg-stone-900 w-full max-w-md p-10 rounded-[3.5rem] border border-white/10 relative">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-2xl font-black italic">Study Note</h3>
+                  <button onClick={() => setShowNoteRecorder(false)} className="opacity-50 hover:opacity-100 transition-opacity"><X/></button>
+                </div>
+                <div className="bg-white/5 p-6 rounded-[2rem] mb-6 flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center">
+                      <MessageSquare size={24} className="text-emerald-500" />
+                    </div>
+                    <textarea 
+                        value={verseNote} onChange={(e) => setVerseNote(e.target.value)}
+                        placeholder="Reflections on this verse..." 
+                        className="w-full bg-transparent border-none outline-none text-lg italic min-h-[100px] placeholder:opacity-10"
+                    />
+                </div>
+                <Button onClick={handleSaveNote} className="w-full bg-emerald-600 py-6 rounded-2xl font-black uppercase tracking-widest">
+                    <Save size={18} className="mr-2"/> Save Study Note
                 </Button>
             </motion.div>
           </div>
