@@ -165,6 +165,13 @@ async function initDb() {
         source TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS notes (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        verse_ref TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     console.log('Database tables initialized');
@@ -430,7 +437,15 @@ app.get('/api/bible/versions', authenticateToken, async (req, res) => {
       headers: { 'api-key': BIBLE_API_KEY }
     });
     const data = await response.json();
-    res.json(data.data);
+   // Filter for specific versions requested by user
+    const allowedVersions = ['KJV', 'NKJV', 'AMP', 'ESV', 'NIV', 'NASB', 'NASV', 'Amharic'];
+    const filtered = data.data.filter((bible: any) => 
+      allowedVersions.includes(bible.abbreviation) || 
+      allowedVersions.some(v => bible.name.includes(v)) ||
+      bible.language.name === 'Amharic'
+    );
+    
+    res.json(filtered.length > 0 ? filtered : data.data.slice(0, 10)); // Fallback if none found
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch Bible versions' });
   }
@@ -630,6 +645,19 @@ app.post('/api/posts/:id/comments', authenticateToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+app.post('/api/notes', authenticateToken, async (req, res) => {
+  const { verseRef, content } = req.body;
+  try {
+    const result = await pool.query(
+      'INSERT INTO notes (user_id, verse_ref, content) VALUES ($1, $2, $3) RETURNING *',
+      [req.user.id, verseRef, content]
+    );
+    await logActivity(req.user.id, 'note', result.rows[0].id, `Added a note for ${verseRef}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save note' });
   }
 });
 
