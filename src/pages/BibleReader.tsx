@@ -147,166 +147,60 @@ export default function BibleReader() {
 
   // --- VERSE ACTIONS ---
 
-  const handleVerseClick = (e: React.MouseEvent, verseNum: string, text: string) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const existingHighlight = highlights.find(h => h.verse_ref === `${selectedBook} ${verseNum}`);
-    
-    setActiveVerse({
-      number: verseNum,
-      text: text,
-      x: rect.left,
-      y: rect.top + window.scrollY - 100,
-      highlightId: existingHighlight?.target_id // Note: activity target_id is the highlight id
-    });
-  };
-
-  const saveHighlight = async (color: string) => {
-    if (!activeVerse) return;
-    try {
-      const newH = await fetchFromDb('/api/highlights', 'POST', {
-        verseRef: `${selectedBook} ${activeVerse.number}`,
-        content: activeVerse.text,
-        color
+  const handleContentClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Find the closest element with data-number (verse)
+    const verseElement = target.closest('[data-number]');
+    if (verseElement) {
+      const num = verseElement.getAttribute('data-number') || "";
+      const text = verseElement.textContent || "";
+      const rect = verseElement.getBoundingClientRect();
+      
+      const existingHighlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
+      
+      setActiveVerse({
+        number: num,
+        text: text,
+        x: rect.left,
+        y: rect.top + window.scrollY - 100,
+        highlightId: existingHighlight?.target_id
       });
-      if (newH) {
-        await refreshUserData();
-      }
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to save highlight", err);
-    }
-  };
-
-  const undoHighlight = async () => {
-    if (!activeVerse || !activeVerse.highlightId) return;
-    try {
-      await fetchFromDb(`/api/highlights/${activeVerse.highlightId}`, 'DELETE');
-      await refreshUserData();
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to undo highlight", err);
-    }
-  };
-
-  const handleSavePrayer = async () => {
-    if (!activeVerse) return;
-    try {
-      const newP = await fetchFromDb('/api/prayers', 'POST', {
-        verseRef: `${selectedBook} ${activeVerse.number}`,
-        note: prayerNote
-      });
-      if (newP) await refreshUserData();
-      setShowPrayerRecorder(false);
-      setPrayerNote('');
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to save prayer", err);
-    }
-  };
-
-  const saveBookmark = async () => {
-    if (!activeVerse) return;
-    try {
-      const newB = await fetchFromDb('/api/bookmarks', 'POST', {
-        targetType: 'bible',
-        targetId: `${selectedBook} ${activeVerse.number}`,
-        description: `${selectedBook} ${activeVerse.number}`
-      });
-      if (newB) await refreshUserData();
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to save bookmark", err);
-    }
-  };
-
-  const saveQuote = async () => {
-    if (!activeVerse) return;
-    try {
-      const newQ = await fetchFromDb('/api/quotes', 'POST', {
-        content: activeVerse.text,
-        author: 'Bible',
-        source: `${selectedBook} ${activeVerse.number}`
-      });
-      if (newQ) await refreshUserData();
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to save quote", err);
-    }
-  };
-
-  const handleSaveNote = async () => {
-    if (!activeVerse) return;
-    try {
-      const newN = await fetchFromDb('/api/notes', 'POST', {
-        verseRef: `${selectedBook} ${activeVerse.number}`,
-        content: verseNote
-      });
-      if (newN) await refreshUserData();
-      setShowNoteRecorder(false);
-      setVerseNote('');
-      setActiveVerse(null);
-    } catch (err) {
-      console.error("Failed to save note", err);
     }
   };
 
   const renderVerses = () => {
     if (!content) return null;
     
-    // Simple parser for API.Bible HTML
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(content, 'text/html');
-    const verseSpans = doc.querySelectorAll('span[data-number]');
-    
-    if (verseSpans.length > 0) {
-      const elements: React.ReactNode[] = [];
-      verseSpans.forEach((span, i) => {
-        const num = span.getAttribute('data-number') || "";
-        const text = span.textContent || "";
-        const highlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
-        
-        elements.push(
-          <span 
-            key={`v-${i}`} 
-            onClick={(e) => handleVerseClick(e, num, text)}
-            className={`cursor-pointer transition-all rounded px-1 py-0.5 hover:bg-white/10 ${highlight ? 'highlighted' : ''}`}
-            style={{ backgroundColor: highlight ? `${highlight.color}33` : 'transparent', borderBottom: highlight ? `2px solid ${highlight.color}` : 'none' }}
-          >
-            <span className="inline-flex items-center justify-center w-6 h-6 mr-1 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md">
-              {num}
-            </span>
-            {text}
-          </span>
-        );
-      });
-      return elements;
-    }
-
-    // Fallback split
-    const parts = content.split(/(\[\d+\])/g);
-    return parts.map((part, i) => {
-      const isVerseNum = part.match(/\[(\d+)\]/);
-      if (isVerseNum) {
-        const num = isVerseNum[1];
-        const nextPart = parts[i+1] || "";
-        const highlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
-        
-        return (
-          <span 
-            key={`v-${i}`} 
-            onClick={(e) => handleVerseClick(e, num, nextPart)}
-            className={`cursor-pointer transition-all rounded px-1 py-0.5 hover:bg-white/10 ${highlight ? 'highlighted' : ''}`}
-            style={{ backgroundColor: highlight ? `${highlight.color}33` : 'transparent', borderBottom: highlight ? `2px solid ${highlight.color}` : 'none' }}
-          >
-            <span className="inline-flex items-center justify-center w-6 h-6 mr-1 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md">
-              {num}
-            </span>
-          </span>
-        );
-      }
-      return <span key={`text-${i}`} className="verse-text">{part}</span>;
-    });
+    // We render the HTML directly to preserve titles and structure
+    // We'll use CSS to handle highlights based on data-number attributes
+    return (
+      <div 
+        className="bible-content"
+        onClick={handleContentClick}
+        dangerouslySetInnerHTML={{ __html: content }} 
+      />
+    );
   };
+
+  // Generate dynamic CSS for highlights
+  const highlightStyles = highlights
+    .filter(h => h.verse_ref.startsWith(selectedBook))
+    .map(h => {
+      const verseNum = h.verse_ref.split(' ').pop();
+      return `
+        [data-number="${verseNum}"] { 
+          background-color: ${h.color}33 !important; 
+          border-bottom: 2px solid ${h.color} !important;
+          border-radius: 4px;
+          padding: 2px 0;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        [data-number="${verseNum}"]:hover {
+          background-color: ${h.color}55 !important;
+        }
+      `;
+    }).join('\n');
 
   const currentFontSize = FONT_SIZES.find(f => f.id === fontSize) || FONT_SIZES[0];
 
