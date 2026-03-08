@@ -510,6 +510,15 @@ app.post('/api/highlights', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to save highlight' });
   }
 });
+app.delete('/api/highlights/:id', authenticateToken, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM highlights WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    await pool.query('DELETE FROM activities WHERE action_type = $1 AND target_id = $2 AND user_id = $3', ['highlight', req.params.id, req.user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete highlight' });
+  }
+});
 
 app.post('/api/prayers', authenticateToken, async (req, res) => {
   const { verseRef, note } = req.body;
