@@ -12,6 +12,13 @@ import { useAuth } from '../hooks/useAuth';
 // --- INTERNAL CONFIGURATION ---
 const APP_SLOGAN = "The Word is Living and Active";
 
+const unescapeHTML = (html: string) => {
+  if (!html) return '';
+  const txt = document.createElement('textarea');
+  txt.innerHTML = html;
+  return txt.value;
+};
+
 const HIGHLIGHT_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', 
   '#06b6d4', '#3b82f6', '#6366f1', '#a855f7', '#ec4899'
@@ -153,7 +160,9 @@ export default function BibleReader() {
     const verseElement = target.closest('[data-number]');
     if (verseElement) {
       const num = verseElement.getAttribute('data-number') || "";
-      const text = verseElement.textContent || "";
+      // Get the text content of the parent to capture the full verse text
+      // We remove the leading verse number if it exists
+      const text = verseElement.parentElement?.textContent?.replace(/^\d+/, '').trim() || verseElement.textContent || "";
       const rect = verseElement.getBoundingClientRect();
       
       const existingHighlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
@@ -168,16 +177,110 @@ export default function BibleReader() {
     }
   };
 
+  const saveHighlight = async (color: string) => {
+    if (!activeVerse) return;
+    try {
+      const newH = await fetchFromDb('/api/highlights', 'POST', {
+        verseRef: `${selectedBook} ${activeVerse.number}`,
+        content: activeVerse.text,
+        color
+      });
+      if (newH) {
+        await refreshUserData();
+      }
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save highlight", err);
+    }
+  };
+
+  const undoHighlight = async () => {
+    if (!activeVerse || !activeVerse.highlightId) return;
+    try {
+      await fetchFromDb(`/api/highlights/${activeVerse.highlightId}`, 'DELETE');
+      await refreshUserData();
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to undo highlight", err);
+    }
+  };
+
+  const handleSavePrayer = async () => {
+    if (!activeVerse) return;
+    try {
+      const newP = await fetchFromDb('/api/prayers', 'POST', {
+        verseRef: `${selectedBook} ${activeVerse.number}`,
+        note: prayerNote
+      });
+      if (newP) await refreshUserData();
+      setShowPrayerRecorder(false);
+      setPrayerNote('');
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save prayer", err);
+    }
+  };
+
+  const saveBookmark = async () => {
+    if (!activeVerse) return;
+    try {
+      const newB = await fetchFromDb('/api/bookmarks', 'POST', {
+        targetType: 'bible',
+        targetId: `${selectedBook} ${activeVerse.number}`,
+        description: `${selectedBook} ${activeVerse.number}`
+      });
+      if (newB) await refreshUserData();
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save bookmark", err);
+    }
+  };
+
+  const saveQuote = async () => {
+    if (!activeVerse) return;
+    try {
+      const newQ = await fetchFromDb('/api/quotes', 'POST', {
+        content: activeVerse.text,
+        author: 'Bible',
+        source: `${selectedBook} ${activeVerse.number}`
+      });
+      if (newQ) await refreshUserData();
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save quote", err);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!activeVerse) return;
+    try {
+      const newN = await fetchFromDb('/api/notes', 'POST', {
+        verseRef: `${selectedBook} ${activeVerse.number}`,
+        content: verseNote
+      });
+      if (newN) await refreshUserData();
+      setShowNoteRecorder(false);
+      setVerseNote('');
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to save note", err);
+    }
+  };
+
   const renderVerses = () => {
     if (!content) return null;
     
-    // We render the HTML directly to preserve titles and structure
-    // We'll use CSS to handle highlights based on data-number attributes
+    let finalContent = content;
+    // If it looks like it's escaped, unescape it
+    if (content.includes('&lt;') || content.includes('&gt;')) {
+      finalContent = unescapeHTML(content);
+    }
+
     return (
       <div 
         className="bible-content"
         onClick={handleContentClick}
-        dangerouslySetInnerHTML={{ __html: content }} 
+        dangerouslySetInnerHTML={{ __html: finalContent }} 
       />
     );
   };
@@ -546,6 +649,16 @@ export default function BibleReader() {
         .verse-text { transition: all 0.2s; cursor: pointer; border-radius: 4px; padding: 2px 0; }
         .verse-text:hover { background: rgba(59, 130, 246, 0.1); }
         ::selection { background: rgba(59, 130, 246, 0.4); }
+        .bible-content { color: #d6d3d1; font-family: 'Crimson Pro', 'Georgia', serif; font-size: 1.1em; }
+        .bible-content p { margin-bottom: 1.5rem; line-height: 2; text-align: justify; }
+        .bible-content .s { font-weight: bold; font-size: 1.3em; margin-top: 2.5rem; margin-bottom: 1rem; display: block; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
+        .bible-content .mt { font-size: 2.2rem; font-weight: 900; margin-bottom: 2.5rem; text-align: center; color: #fff; text-transform: uppercase; letter-spacing: 0.1em; }
+        .bible-content .v { font-size: 0.65em; vertical-align: super; margin-right: 0.4rem; color: #3b82f6; font-weight: 800; background: rgba(59, 130, 246, 0.1); padding: 2px 4px; border-radius: 4px; }
+        .bible-content .q { display: block; margin-left: 1.5rem; font-style: italic; }
+        .bible-content .q2 { display: block; margin-left: 3rem; font-style: italic; }
+        .bible-content .wj { color: #f87171; font-weight: 500; } /* Words of Jesus */
+        .bible-content .d { font-style: italic; opacity: 0.7; display: block; margin-bottom: 1rem; text-align: center; } /* Descriptive titles */
+        ${highlightStyles}
       `}} />
     </div>
   );
