@@ -80,6 +80,9 @@ async function initDb() {
         id SERIAL PRIMARY KEY,
         title TEXT NOT NULL,
         author TEXT NOT NULL,
+        release_year TEXT,
+        is_trending BOOLEAN DEFAULT FALSE,
+        is_new BOOLEAN DEFAULT TRUE,
         cover_url TEXT,
         file_url TEXT,
         category TEXT DEFAULT 'Spiritual',
@@ -96,6 +99,13 @@ async function initDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // Ensure missing columns exist in books table
+    await pool.query(`
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS release_year TEXT;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS is_trending BOOLEAN DEFAULT FALSE;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS is_new BOOLEAN DEFAULT TRUE;
+    `);
+
     // Socials & Activity Tables
     await pool.query(`
       CREATE TABLE IF NOT EXISTS posts (
@@ -166,6 +176,7 @@ async function initDb() {
         source TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
       CREATE TABLE IF NOT EXISTS notes (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -407,7 +418,9 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
   const { title, author, release_year, is_trending, is_new, category } = req.body;
   
-  const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+  const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+  if (!files) return res.status(400).json({ error: 'No files uploaded' });
+
   const bookFile = files['bookFile'] ? `/uploads/${files['bookFile'][0].filename}` : null;
   const coverFile = files['cover'] ? `/uploads/${files['cover'][0].filename}` : null;
 
@@ -415,8 +428,18 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
 
   try {
     const result = await pool.query(
-      'INSERT INTO books (title, author, cover_url, file_url, category, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-      [title, author, coverFile, bookFile, category || 'Spiritual', req.user.id]
+      'INSERT INTO books (title, author, release_year, is_trending, is_new, cover_url, file_url, category, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+      [
+        title, 
+        author, 
+        release_year, 
+        is_trending === 'true' || is_trending === true, 
+        is_new === 'true' || is_new === true, 
+        coverFile, 
+        bookFile, 
+        category || 'Spiritual', 
+        req.user.id
+      ]
     );
     
     await logActivity(req.user.id, 'upload', result.rows[0].id, `Uploaded a new book: ${title}`);
