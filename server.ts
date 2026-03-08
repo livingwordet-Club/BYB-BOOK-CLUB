@@ -46,6 +46,7 @@ const pool = new pg.Pool({
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Multer for book uploads
 const storage = multer.diskStorage({
