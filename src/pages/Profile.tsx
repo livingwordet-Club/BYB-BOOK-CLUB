@@ -224,6 +224,7 @@ export default function Profile() {
     { label: 'Quotes', count: (activity || []).filter(a => a.type === 'quote').length, icon: Quote, color: 'text-purple-600' },
     { label: 'Highlights', count: (activity || []).filter(a => a.type === 'highlight').length, icon: Highlighter, color: 'text-yellow-600' },
     { label: 'Prayers', count: (activity || []).filter(a => a.type === 'prayer').length, icon: Heart, color: 'text-red-600' },
+    { label: 'Notes', count: (activity || []).filter(a => a.type === 'note').length, icon: MessageCircle, color: 'text-emerald-600' },
   ];
 
   return (
