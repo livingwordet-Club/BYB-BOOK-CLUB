@@ -433,7 +433,7 @@ const BIBLE_BASE_URL = 'https://rest.api.bible/v1';
 
 app.get('/api/bible/versions', authenticateToken, async (req, res) => {
   try {
-    const response = await fetch(`${BIBLE_BASE_URL}/bibles`, {
+    const response = await fetch(`${BIBLE_BASE_URL}/bibles/${req.params.bibleId}/chapters/${req.params.chapterId}?content-type=html&include-notes=false&include-titles=true&include-chapter-numbers=false&include-verse-numbers=true`, {
       headers: { 'api-key': BIBLE_API_KEY }
     });
     const data = await response.json();
