@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, X, MessageSquare, BookOpen, 
   ChevronLeft, ChevronRight, Loader2, Bookmark, 
-  Quote, Heart, Library, Hand, Mic, Save, Search
+  Quote, Heart, Library, Hand, Mic, Save, Search,
+  RotateCcw, Trash2, CheckCircle2
 } from 'lucide-react';
 import { Button } from '../components/UI';
 import { useAuth } from '../hooks/useAuth';
@@ -47,11 +48,12 @@ export default function BibleReader() {
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showNav, setShowNav] = useState(false);
+  const [showVersionNav, setShowVersionNav] = useState(false);
   const [fontSize, setFontSize] = useState('lg');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Functional Pop-up State
-  const [activeVerse, setActiveVerse] = useState<{number: string, text: string, x: number, y: number} | null>(null);
+  const [activeVerse, setActiveVerse] = useState<{number: string, text: string, x: number, y: number, highlightId?: number} | null>(null);
   const [showPrayerRecorder, setShowPrayerRecorder] = useState(false);
   const [showNoteRecorder, setShowNoteRecorder] = useState(false);
   const [prayerNote, setPrayerNote] = useState('');
@@ -75,25 +77,29 @@ export default function BibleReader() {
     }
   };
 
+  const refreshUserData = async () => {
+    const userData = await fetchFromDb('/api/activity');
+    if (userData && Array.isArray(userData)) {
+      setHighlights(userData.filter((a: any) => a.type === 'highlight'));
+      setPrayers(userData.filter((a: any) => a.type === 'prayer'));
+      setBookmarks(userData.filter((a: any) => a.type === 'bookmark'));
+      setQuotes(userData.filter((a: any) => a.type === 'quote'));
+      setNotes(userData.filter((a: any) => a.type === 'note'));
+    }
+  };
+
   useEffect(() => {
     const initLoad = async () => {
       setLoading(true);
       try {
         const versions = await fetchFromDb('/api/bible/versions');
-        const userData = await fetchFromDb('/api/activity'); // Get all activity to populate local state
+        await refreshUserData();
         
         if (versions && Array.isArray(versions)) {
           setBibles(versions);
           if (versions.length > 0) {
             setSelectedBible(versions[0].id);
           }
-        }
-        if (userData && Array.isArray(userData)) {
-            setHighlights(userData.filter((a: any) => a.type === 'highlight'));
-            setPrayers(userData.filter((a: any) => a.type === 'prayer'));
-            setBookmarks(userData.filter((a: any) => a.type === 'bookmark'));
-            setQuotes(userData.filter((a: any) => a.type === 'quote'));
-            setNotes(userData.filter((a: any) => a.type === 'note'));
         }
       } catch (err) {
         console.error("Failed to load initial data", err);
@@ -142,12 +148,15 @@ export default function BibleReader() {
   // --- VERSE ACTIONS ---
 
   const handleVerseClick = (e: React.MouseEvent, verseNum: string, text: string) => {
-    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const existingHighlight = highlights.find(h => h.verse_ref === `${selectedBook} ${verseNum}`);
+    
     setActiveVerse({
       number: verseNum,
       text: text,
       x: rect.left,
-      y: rect.top + window.scrollY - 100
+      y: rect.top + window.scrollY - 100,
+      highlightId: existingHighlight?.target_id // Note: activity target_id is the highlight id
     });
   };
 
@@ -159,10 +168,23 @@ export default function BibleReader() {
         content: activeVerse.text,
         color
       });
-      if (newH) setHighlights([newH, ...highlights]);
+      if (newH) {
+        await refreshUserData();
+      }
       setActiveVerse(null);
     } catch (err) {
       console.error("Failed to save highlight", err);
+    }
+  };
+
+  const undoHighlight = async () => {
+    if (!activeVerse || !activeVerse.highlightId) return;
+    try {
+      await fetchFromDb(`/api/highlights/${activeVerse.highlightId}`, 'DELETE');
+      await refreshUserData();
+      setActiveVerse(null);
+    } catch (err) {
+      console.error("Failed to undo highlight", err);
     }
   };
 
@@ -173,7 +195,7 @@ export default function BibleReader() {
         verseRef: `${selectedBook} ${activeVerse.number}`,
         note: prayerNote
       });
-      if (newP) setPrayers([newP, ...prayers]);
+      if (newP) await refreshUserData();
       setShowPrayerRecorder(false);
       setPrayerNote('');
       setActiveVerse(null);
@@ -190,7 +212,7 @@ export default function BibleReader() {
         targetId: `${selectedBook} ${activeVerse.number}`,
         description: `${selectedBook} ${activeVerse.number}`
       });
-      if (newB) setBookmarks([newB, ...bookmarks]);
+      if (newB) await refreshUserData();
       setActiveVerse(null);
     } catch (err) {
       console.error("Failed to save bookmark", err);
@@ -205,7 +227,7 @@ export default function BibleReader() {
         author: 'Bible',
         source: `${selectedBook} ${activeVerse.number}`
       });
-      if (newQ) setQuotes([newQ, ...quotes]);
+      if (newQ) await refreshUserData();
       setActiveVerse(null);
     } catch (err) {
       console.error("Failed to save quote", err);
@@ -219,7 +241,7 @@ export default function BibleReader() {
         verseRef: `${selectedBook} ${activeVerse.number}`,
         content: verseNote
       });
-      if (newN) setNotes([newN, ...notes]);
+      if (newN) await refreshUserData();
       setShowNoteRecorder(false);
       setVerseNote('');
       setActiveVerse(null);
@@ -230,45 +252,60 @@ export default function BibleReader() {
 
   const renderVerses = () => {
     if (!content) return null;
-    const isHtmlSpan = content.includes('data-number');
     
-    if (isHtmlSpan) {
-        const parts = content.split(/(<span data-number="\d+".*?<\/span>)/g);
-        return parts.map((part, i) => {
-          if (part.includes('data-number')) {
-            const numMatch = part.match(/data-number="(\d+)"/);
-            const num = numMatch ? numMatch[1] : "";
-            return (
-              <span 
-                key={`v-${i}`} 
-                onClick={(e) => handleVerseClick(e, num, part.replace(/<[^>]*>?/gm, ''))}
-                className="inline-flex items-center justify-center w-6 h-6 mr-2 text-[10px] font-black bg-blue-600/10 text-blue-500 rounded cursor-pointer hover:bg-blue-600 hover:text-white transition-all"
-              >
-                {num}
-              </span>
-            );
-          }
-          return <span key={`text-${i}`} dangerouslySetInnerHTML={{ __html: part }} />;
-        });
-    } else {
-        const parts = content.split(/(\[\d+\])/g);
-        return parts.map((part, i) => {
-          const isVerseNum = part.match(/\[(\d+)\]/);
-          if (isVerseNum) {
-            const num = isVerseNum[1];
-            return (
-              <span 
-                key={`v-${i}`} 
-                onClick={(e) => handleVerseClick(e, num, parts[i+1] || "")}
-                className="inline-flex items-center justify-center w-6 h-6 mr-2 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md cursor-pointer hover:bg-blue-600 hover:text-white transition-all"
-              >
-                {num}
-              </span>
-            );
-          }
-          return <span key={`text-${i}`} className="verse-text">{part}</span>;
-        });
+    // Simple parser for API.Bible HTML
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(content, 'text/html');
+    const verseSpans = doc.querySelectorAll('span[data-number]');
+    
+    if (verseSpans.length > 0) {
+      const elements: React.ReactNode[] = [];
+      verseSpans.forEach((span, i) => {
+        const num = span.getAttribute('data-number') || "";
+        const text = span.textContent || "";
+        const highlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
+        
+        elements.push(
+          <span 
+            key={`v-${i}`} 
+            onClick={(e) => handleVerseClick(e, num, text)}
+            className={`cursor-pointer transition-all rounded px-1 py-0.5 hover:bg-white/10 ${highlight ? 'highlighted' : ''}`}
+            style={{ backgroundColor: highlight ? `${highlight.color}33` : 'transparent', borderBottom: highlight ? `2px solid ${highlight.color}` : 'none' }}
+          >
+            <span className="inline-flex items-center justify-center w-6 h-6 mr-1 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md">
+              {num}
+            </span>
+            {text}
+          </span>
+        );
+      });
+      return elements;
     }
+
+    // Fallback split
+    const parts = content.split(/(\[\d+\])/g);
+    return parts.map((part, i) => {
+      const isVerseNum = part.match(/\[(\d+)\]/);
+      if (isVerseNum) {
+        const num = isVerseNum[1];
+        const nextPart = parts[i+1] || "";
+        const highlight = highlights.find(h => h.verse_ref === `${selectedBook} ${num}`);
+        
+        return (
+          <span 
+            key={`v-${i}`} 
+            onClick={(e) => handleVerseClick(e, num, nextPart)}
+            className={`cursor-pointer transition-all rounded px-1 py-0.5 hover:bg-white/10 ${highlight ? 'highlighted' : ''}`}
+            style={{ backgroundColor: highlight ? `${highlight.color}33` : 'transparent', borderBottom: highlight ? `2px solid ${highlight.color}` : 'none' }}
+          >
+            <span className="inline-flex items-center justify-center w-6 h-6 mr-1 text-[10px] font-black bg-blue-600/20 text-blue-400 rounded-md">
+              {num}
+            </span>
+          </span>
+        );
+      }
+      return <span key={`text-${i}`} className="verse-text">{part}</span>;
+    });
   };
 
   const currentFontSize = FONT_SIZES.find(f => f.id === fontSize) || FONT_SIZES[0];
@@ -282,9 +319,10 @@ export default function BibleReader() {
           <Button variant="ghost" onClick={() => setShowNav(true)} className="rounded-full text-white">
             <Library size={22} />
           </Button>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1">
+          <div className="flex flex-col cursor-pointer" onClick={() => setShowVersionNav(true)}>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1 flex items-center gap-1">
                 {bibles?.find(b => b.id === selectedBible)?.abbreviation || 'BIBLE'}
+                <RotateCcw size={10} className="opacity-50" />
             </span>
             <h2 className="text-sm font-bold text-white truncate max-w-[120px]">
               {books?.find(b => b.id === selectedBook)?.name} {selectedChapter?.split('.').pop()}
@@ -392,31 +430,68 @@ export default function BibleReader() {
               animate={{ opacity: 1, scale: 1, y: 0 }} 
               exit={{ opacity: 0 }}
               style={{ left: `calc(${activeVerse.x}px - 140px)`, top: `${activeVerse.y}px` }}
-              className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[320px]"
+              className="fixed z-[500] bg-stone-900 border border-white/10 p-5 rounded-[2.5rem] shadow-2xl w-[340px]"
             >
               <div className="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
                 <span className="text-[10px] font-black text-blue-500 uppercase">Verse {activeVerse.number}</span>
                 <button onClick={() => setActiveVerse(null)} className="opacity-30 hover:opacity-100"><X size={14}/></button>
               </div>
+              
               <div className="grid grid-cols-5 gap-2 mb-4">
                 {HIGHLIGHT_COLORS.map(c => (
-                  <button key={c} onClick={() => saveHighlight(c)} className="w-8 h-8 rounded-full hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
+                  <motion.button 
+                    key={c} 
+                    whileHover={{ scale: 1.2 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => saveHighlight(c)} 
+                    className="w-8 h-8 rounded-full transition-transform border border-white/10" 
+                    style={{ backgroundColor: c }} 
+                  />
                 ))}
               </div>
+
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setShowPrayerRecorder(true)} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                <motion.button 
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  onClick={() => setShowPrayerRecorder(true)} 
+                  className="flex items-center justify-center gap-2 bg-white/5 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase"
+                >
                   <Hand size={14} className="text-red-500" /> Prayer
-                </button>
-                <button onClick={saveBookmark} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  onClick={saveBookmark} 
+                  className="flex items-center justify-center gap-2 bg-white/5 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase"
+                >
                   <Bookmark size={14} className="text-blue-500" /> Save
-                </button>
-                <button onClick={saveQuote} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  onClick={saveQuote} 
+                  className="flex items-center justify-center gap-2 bg-white/5 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase"
+                >
                   <Quote size={14} className="text-purple-500" /> Quote
-                </button>
-                <button onClick={() => setShowNoteRecorder(true)} className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase">
+                </motion.button>
+                <motion.button 
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                  onClick={() => setShowNoteRecorder(true)} 
+                  className="flex items-center justify-center gap-2 bg-white/5 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase"
+                >
                   <MessageSquare size={14} className="text-emerald-500" /> Note
-                </button>
+                </motion.button>
               </div>
+
+              {activeVerse.highlightId && (
+                <motion.button 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  whileHover={{ scale: 1.02, backgroundColor: 'rgba(239, 68, 68, 0.2)' }}
+                  onClick={undoHighlight}
+                  className="w-full mt-2 flex items-center justify-center gap-2 bg-red-500/10 text-red-500 transition-colors p-3 rounded-2xl text-[9px] font-black uppercase"
+                >
+                  <Trash2 size={14} /> Undo Highlight
+                </motion.button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -498,7 +573,7 @@ export default function BibleReader() {
         </Button>
       </footer>
 
-      {/* --- NAVIGATION OVERLAY --- */}
+      {/* --- NAVIGATION OVERLAY (BOOKS) --- */}
       <AnimatePresence>
         {showNav && (
           <React.Fragment>
@@ -512,6 +587,31 @@ export default function BibleReader() {
                     {books?.map((b: any) => (
                         <button key={b?.id} onClick={() => { setSelectedBook(b?.id); setShowNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBook === b?.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
                             {b?.name}
+                        </button>
+                    ))}
+                </div>
+            </motion.div>
+          </React.Fragment>
+        )}
+      </AnimatePresence>
+
+      {/* --- VERSION OVERLAY (BIBLES) --- */}
+      <AnimatePresence>
+        {showVersionNav && (
+          <React.Fragment>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowVersionNav(false)} className="fixed inset-0 bg-black/95 backdrop-blur-md z-[1000]" />
+            <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} transition={{ type: 'spring', damping: 30 }} className="fixed inset-y-0 left-0 w-full max-w-sm bg-stone-950 z-[1010] flex flex-col p-10">
+                <div className="flex justify-between items-center mb-12">
+                    <h2 className="text-4xl font-black italic tracking-tighter">Versions</h2>
+                    <button onClick={() => setShowVersionNav(false)}><X size={32}/></button>
+                </div>
+                <div className="space-y-1 overflow-y-auto custom-scroll pr-4">
+                    {bibles?.map((b: any) => (
+                        <button key={b?.id} onClick={() => { setSelectedBible(b?.id); setShowVersionNav(false); }} className={`w-full text-left p-5 rounded-2xl font-bold transition-all ${selectedBible === b?.id ? 'bg-blue-600 text-white' : 'hover:bg-white/5 opacity-40 hover:opacity-100'}`}>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] font-black uppercase tracking-widest opacity-50">{b?.abbreviation}</span>
+                                <span>{b?.name}</span>
+                            </div>
                         </button>
                     ))}
                 </div>
