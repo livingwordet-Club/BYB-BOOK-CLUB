@@ -52,6 +52,7 @@ const pool = new pg.Pool({
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Multer for memory storage (Supabase uploads)
 const storage = multer.memoryStorage();
@@ -63,7 +64,14 @@ const bookUpload = upload.fields([
 
 // Helper to upload to Supabase
 const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.error('Supabase configuration is missing! Check your environment variables.');
+    throw new Error('Supabase configuration missing');
+  }
+
   const fileName = `${Date.now()}-${file.originalname}`;
+  console.log(`Uploading to Supabase bucket: ${bucket}, file: ${fileName}`);
+  
   const { data, error } = await supabase.storage
     .from(bucket)
     .upload(fileName, file.buffer, {
@@ -71,12 +79,16 @@ const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
       upsert: false
     });
 
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase upload error:', error);
+    throw error;
+  }
 
   const { data: { publicUrl } } = supabase.storage
     .from(bucket)
     .getPublicUrl(fileName);
 
+  console.log(`Upload successful. Public URL: ${publicUrl}`);
   return publicUrl;
 };
 
@@ -289,9 +301,12 @@ app.post('/api/user/profile-pic', authenticateToken, upload.single('image'), asy
     const url = await uploadToSupabase(req.file, 'profiles');
     await pool.query('UPDATE users SET profile_pic = $1 WHERE id = $2', [url, req.user.id]);
     res.json({ url });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Profile pic upload error:', err);
-    res.status(500).json({ error: 'Failed to update profile picture' });
+    const errorMessage = err.message === 'Supabase configuration missing' 
+      ? 'Server configuration error: Supabase URL or Key is missing.' 
+      : 'Failed to update profile picture. Please try again.';
+    res.status(500).json({ error: errorMessage });
   }
 });
 app.post('/api/auth/register', async (req, res) => {
@@ -469,9 +484,12 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
     await logActivity(req.user.id, 'upload', result.rows[0].id, `Uploaded a new book: ${title}`);
     
     res.json({ message: 'Book uploaded', bookId: result.rows[0].id });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Upload error:', err);
-    res.status(500).json({ error: 'Failed to upload book' });
+    const errorMessage = err.message === 'Supabase configuration missing' 
+      ? 'Server configuration error: Supabase URL or Key is missing.' 
+      : 'Failed to upload book. Please check your file size and try again.';
+    res.status(500).json({ error: errorMessage });
   }
 });
 
