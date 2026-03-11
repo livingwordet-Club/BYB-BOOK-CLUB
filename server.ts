@@ -614,13 +614,8 @@ app.post('/api/quotes', authenticateToken, async (req, res) => {
 
 app.get('/api/bible/verse', async (req, res) => {
   const { reference } = req.query;
-  const BIBLE_API_KEY = process.env.BIBLE_API_KEY;
-  if (!BIBLE_API_KEY) return res.status(500).json({ error: 'Bible API key not configured' });
 
   try {
-    // Example using API.Bible or similar
-    // For now, returning a mock or using a public API if possible
-    // Let's use a public one for the demo if no key is provided
     const response = await fetch(`https://bible-api.com/${reference}`);
     const data = await response.json();
     res.json(data);
