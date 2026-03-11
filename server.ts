@@ -508,12 +508,16 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
     
     if (err.message === 'Supabase configuration missing') {
       errorMessage = 'Configuration Error: Supabase URL or Key is missing in Secrets.';
-    } else if (err.code && err.code.startsWith('28')) {
-      errorMessage = 'Database Error: Invalid password in DATABASE_URL.';
+    } else if (err.code === '28P01' || err.code === '28000') {
+      errorMessage = 'Database Error: Invalid password in DATABASE_URL. Please check your Supabase DB password.';
+    } else if (err.code === '3D000') {
+      errorMessage = 'Database Error: Database "postgres" not found.';
     } else if (err.message && err.message.includes('bucket')) {
-      errorMessage = `Supabase Error: ${err.message}. Ensure the "library" bucket exists and is Public.`;
+      errorMessage = `Supabase Storage Error: ${err.message}. Ensure the "library" bucket exists and is Public.`;
+    } else if (err.code) {
+      errorMessage = `Database Error (Code ${err.code}): ${err.message}`;
     } else {
-      errorMessage = `Error: ${err.message || 'Unknown error during upload'}`;
+      errorMessage = `System Error: ${err.message || 'Unknown error during upload'}`;
     }
     
     res.status(500).json({ error: errorMessage });
