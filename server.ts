@@ -39,9 +39,19 @@ const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // Supabase Setup
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseKey);
+let supabaseClient: any = null;
+
+const getSupabase = () => {
+  if (!supabaseClient) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_KEY;
+    if (!url || !key) {
+      throw new Error('Supabase configuration missing');
+    }
+    supabaseClient = createClient(url, key);
+  }
+  return supabaseClient;
+};
 
 // Database Setup
 const pool = new pg.Pool({
@@ -72,6 +82,7 @@ const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
   const fileName = `${Date.now()}-${file.originalname}`;
   console.log(`Uploading to Supabase bucket: ${bucket}, file: ${fileName}`);
   
+  const supabase = getSupabase();
   const { data, error } = await supabase.storage
     .from(bucket)
     .upload(fileName, file.buffer, {
@@ -84,6 +95,7 @@ const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
     throw error;
   }
 
+  const supabase = getSupabase();
   const { data: { publicUrl } } = supabase.storage
     .from(bucket)
     .getPublicUrl(fileName);
@@ -460,12 +472,17 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
   if (!files || !files['bookFile']) return res.status(400).json({ error: 'Book file is required' });
 
   try {
+    console.log('Starting book upload process...');
     const bookFileUrl = await uploadToSupabase(files['bookFile'][0], 'library');
+    console.log('Book file uploaded to Supabase:', bookFileUrl);
+
     let coverFileUrl = null;
     if (files['cover']) {
       coverFileUrl = await uploadToSupabase(files['cover'][0], 'library');
+      console.log('Cover image uploaded to Supabase:', coverFileUrl);
     }
 
+    console.log('Inserting book into database...');
     const result = await pool.query(
       'INSERT INTO books (title, author, release_year, is_trending, is_new, cover_url, file_url, category, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
       [
@@ -480,15 +497,25 @@ app.post('/api/books', authenticateToken, bookUpload, async (req, res) => {
         req.user.id
       ]
     );
+    console.log('Book inserted successfully with ID:', result.rows[0].id);
     
     await logActivity(req.user.id, 'upload', result.rows[0].id, `Uploaded a new book: ${title}`);
     
     res.json({ message: 'Book uploaded', bookId: result.rows[0].id });
   } catch (err: any) {
-    console.error('Upload error:', err);
-    const errorMessage = err.message === 'Supabase configuration missing' 
-      ? 'Server configuration error: Supabase URL or Key is missing.' 
-      : 'Failed to upload book. Please check your file size and try again.';
+    console.error('DETAILED UPLOAD ERROR:', err);
+    let errorMessage = 'Upload failed.';
+    
+    if (err.message === 'Supabase configuration missing') {
+      errorMessage = 'Configuration Error: Supabase URL or Key is missing in Secrets.';
+    } else if (err.code && err.code.startsWith('28')) {
+      errorMessage = 'Database Error: Invalid password in DATABASE_URL.';
+    } else if (err.message && err.message.includes('bucket')) {
+      errorMessage = `Supabase Error: ${err.message}. Ensure the "library" bucket exists and is Public.`;
+    } else {
+      errorMessage = `Error: ${err.message || 'Unknown error during upload'}`;
+    }
+    
     res.status(500).json({ error: errorMessage });
   }
 });
