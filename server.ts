@@ -95,7 +95,6 @@ const uploadToSupabase = async (file: Express.Multer.File, bucket: string) => {
     throw error;
   }
 
-  const supabase = getSupabase();
   const { data: { publicUrl } } = supabase.storage
     .from(bucket)
     .getPublicUrl(fileName);
