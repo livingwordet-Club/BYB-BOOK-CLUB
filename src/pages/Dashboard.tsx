@@ -42,10 +42,34 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showDailyVerse, setShowDailyVerse] = useState(false);
 
-  const dailyVerse = {
-    ref: "Philippians 4:13",
-    text: "I can do all things through Christ who strengthens me."
-  };
+  const [dailyVerse, setDailyVerse] = useState({
+    ref: "Loading...",
+    text: "Fetching the word of the day..."
+  });
+
+  useEffect(() => {
+    const fetchDailyVerse = async () => {
+      try {
+        // Using labs.bible.org for Verse of the Day (VOTD)
+        const response = await axios.get('https://labs.bible.org/api/?passage=votd&type=json');
+        if (response.data && response.data.length > 0) {
+          const verse = response.data[0];
+          setDailyVerse({
+            ref: `${verse.bookname} ${verse.chapter}:${verse.verse}`,
+            text: verse.text
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch daily verse', err);
+        // Fallback
+        setDailyVerse({
+          ref: "Philippians 4:13",
+          text: "I can do all things through Christ who strengthens me."
+        });
+      }
+    };
+    fetchDailyVerse();
+  }, []);
 
   useEffect(() => {
     const fetchDashboard = async () => {
